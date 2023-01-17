@@ -20,7 +20,7 @@ jobs:
         run: make linux-amd64
 
       - name : Upload artifact bin
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: bityuan-linux-amd64.tar.gz
           path: |
