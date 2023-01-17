@@ -1,5 +1,30 @@
 changelog
 
+<a name="1.0.0"></a>
+# 1.0.0 (2023-01-17)
+
+
+### Bug Fixes
+
+* add autonomy exec to manager ([d0640e8](https://github.com/bysomeone/bityuan/commit/d0640e8))
+* add btc multisign address fork ([b07883a](https://github.com/bysomeone/bityuan/commit/b07883a))
+* add user.p.game ignore height ([5498357](https://github.com/bysomeone/bityuan/commit/5498357))
+* add user.p.proof ignore height list ([44d78d5](https://github.com/bysomeone/bityuan/commit/44d78d5))
+* fixed version value ([7aa99f2](https://github.com/bysomeone/bityuan/commit/7aa99f2))
+* sync chain33 patch version ([23d8bc7](https://github.com/bysomeone/bityuan/commit/23d8bc7))
+* sync chain33 patch version 1.67.2 ([34d6e6b](https://github.com/bysomeone/bityuan/commit/34d6e6b))
+* sync plugin patch version v1.67.5 ([118c62d](https://github.com/bysomeone/bityuan/commit/118c62d))
+* sync plugin patch version v1.67.5 ([f535920](https://github.com/bysomeone/bityuan/commit/f535920))
+* update fork height to 23m ([5a566cc](https://github.com/bysomeone/bityuan/commit/5a566cc))
+* update release action ([8b15477](https://github.com/bysomeone/bityuan/commit/8b15477))
+
+### Features
+
+* multiple address format ([87f955b](https://github.com/bysomeone/bityuan/commit/87f955b))
+* release 6.6.0 ([b2484c9](https://github.com/bysomeone/bityuan/commit/b2484c9))
+* release v6.6.0 ([05dc1c6](https://github.com/bysomeone/bityuan/commit/05dc1c6))
+* sync chain33 v1.67.0 ([91d6b95](https://github.com/bysomeone/bityuan/commit/91d6b95))
+
 <a name="6.8.1"></a>
 ## [6.8.1](https://github.com/bityuan/bityuan/compare/v6.8.0...v6.8.1) (2022-09-14)
 
