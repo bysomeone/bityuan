@@ -7,7 +7,7 @@ path="${2}"
 
 function filterLinter() {
     res=$(
-        golangci-lint run --no-config --issues-exit-code=1 --deadline=2m --disable-all \
+        golangci-lint run --no-config --issues-exit-code=1 --deadline=2m -j 1 --disable-all \
             --enable=gofmt \
             --enable=gosimple \
             --enable=deadcode \
