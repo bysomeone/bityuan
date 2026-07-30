@@ -9,6 +9,7 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'
+          cache: true
 
       - name: Intsall Golangci-lint
         run: |
@@ -38,6 +39,7 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'
+          cache: true
       - name: set go env
         run: export PATH=${PATH}:`go env GOPATH`/bin
       - name: deploy
