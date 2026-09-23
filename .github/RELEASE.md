@@ -34,30 +34,37 @@
 
 用途：push 没能触发发布流程时，手动跑一遍 semantic-release。它会打 tag、发 release、上传 linux 包。
 
-⚠️ **它不能"强制"发版**：如果自上一个 tag 以来没有 `[[FEAT]]` / `[[FIX]]` 这类发版类型的提交，
+⚠️ **它不能"强制"发版**：如果自上一个 tag 以来没有 `feat:` / `fix:` 这类发版类型的提交，
 它会判定"无需发布"直接退出，什么都不做。想发版得先有一个发版类型的提交。
 
 ## 什么样的提交才会发版
 
-发版由 semantic-release 判定，它用的是 **jshint 格式**（`.releaserc.yml` 里 `preset: jshint`），
-**只认方括号标签、且必须大写**：
+semantic-release decides, using the **Angular preset** — the conventional-commits
+standard (`preset: angular` in `.releaserc.yml`), the same one chain33 and plugin
+use. Subjects take the form `type(scope): description`:
 
-| 提交标题写成 | 结果 |
+| Commit subject | Result |
 |---|---|
-| `[[FEAT]] 描述` | 发 minor（6.8.x → 6.9.0），CHANGELOG 归入 Features |
-| `[[FIX]] 描述` | 发 patch（6.8.21 → 6.8.22），CHANGELOG 归入 Bug Fixes |
-| 正文含 `BREAKING CHANGE:` | 发 major |
+| `feat: description` | minor release (6.9.x → 6.10.0), CHANGELOG under Features |
+| `fix: description` | patch release (6.9.1 → 6.9.2), CHANGELOG under Bug Fixes |
+| body contains `BREAKING CHANGE:` | major release |
 
-**其他写法一律不发版**，也不会进 CHANGELOG：`feat: xxx`、`fix(scope): xxx`、`ci: xxx`、纯中文描述等。
-所以只改 CI / 文档、又想让版本号往前走时，得单独写一个 `[[FIX]] ...` 的提交——
-历史上就是这么做的（见 CHANGELOG 6.8.21 的 "trigger patch release for build and CI fixes"）。
+`chore:` / `docs:` / `ci:` / `test:` / `refactor:` trigger no release and never
+reach the CHANGELOG. Note what follows from that: **the CHANGELOG is the release
+notes, so anything users or operators need to know has to be a `feat:` or a
+`fix:`** — including a dependency bump that carries a real fix. One PR may hold
+several `fix:` commits; each becomes its own bullet.
+
+Before v6.9.1 this repo used the jshint preset, which recognised only `[[FEAT]]` /
+`[[FIX]]` subjects and silently ignored `fix:` / `feat:`. Older CHANGELOG entries
+still read that way.
 
 ## 出问题了怎么判断
 
 | 现象 | 怎么办 |
 |---|---|
 | 某个平台的包没上传 | 用上面「重新打包」入口，填那个 tag 重跑一遍 |
-| 整个 release 都没出来（tag 都没打） | 看 `release` workflow 里 **Release Linux** 的日志：偶发问题（网络 / runner）就重跑那次失败的 run；代码问题就修好后再推一个带 `[[FIX]]` 或 `[[FEAT]]` 的提交 |
+| 整个 release 都没出来（tag 都没打） | 看 `release` workflow 里 **Release Linux** 的日志：偶发问题（网络 / runner）就重跑那次失败的 run；代码问题就修好后再推一个带 `fix:` 或 `feat:` 的提交 |
 | 手动补包跑完，release 里还是缺东西 | 看那次 run 里哪个 job 红了。**冒烟测试没通过时上传会被拦住**（故意的：宁可不上传，也不发没验证过的包） |
 | 想核对下载到的文件 | release 里有 `SHA256SUMS`，`shasum -a 256 -c SHA256SUMS`（macOS / Linux） |
 
