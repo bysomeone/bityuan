@@ -22,12 +22,21 @@ jobs:
     outputs:
       is_release: ${{ steps.chk.outputs.is_release }}
       release_tag: ${{ steps.chk.outputs.release_tag }}
+      version: ${{ steps.chk.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - id: chk
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Every package file name carries this version. It is always read from
+          # version/version.go, which is correct on both paths: the manual one checks
+          # out the tag, and the automatic one checks out the release commit that just
+          # bumped it. Never use `git describe` here -- semantic-release pushes the
+          # commit before the tag, so it would sometimes still resolve to the previous
+          # tag and name the packages after the wrong release.
+          VER=$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' version/version.go | head -1)
+          echo "version=$VER" >> $GITHUB_OUTPUT
           if [ -n "${{ inputs.manual_upload }}" ]; then
             echo "is_release=true" >> $GITHUB_OUTPUT
             echo "release_tag=${{ inputs.manual_upload }}" >> $GITHUB_OUTPUT
@@ -39,10 +48,6 @@ jobs:
             echo "is_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          # release commit 已把 version/version.go 更新为新版本，tag 名由它推导
-          # 注意：semantic-release 先推 commit 再推 tag，此 job 里 tag 可能还不存在，
-          # 所以这里不查 API，等 tag 的校验放到 upload-win-mac 里做
-          VER=$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' version/version.go | head -1)
           if [ -z "$VER" ]; then
             echo "无法从 version/version.go 解析版本号" >&2
             echo "is_release=false" >> $GITHUB_OUTPUT
@@ -54,6 +59,9 @@ jobs:
   build-windows:
     name: Build Windows (MinGW)
     runs-on: windows-latest
+    needs: check
+    env:
+      PKG_VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -87,19 +95,22 @@ jobs:
         run: |
           choco install 7zip -y 2>$null
           choco install winrar -y 2>$null
+          $qt = "bityuan-windows-amd64-qt-$env:PKG_VERSION.exe"
           Write-Host "Downloading Qt shell from v6.8.18..."
           # v6.8.18 的这个资产是安装包的"壳"，被写死依赖，不能删（见 .github/RELEASE.md）
           gh release download v6.8.18 --repo bityuan/bityuan --pattern "bityuan-windows-amd64-qt.exe" --dir qt-shell --clobber
           $shell = Join-Path qt-shell "bityuan-windows-amd64-qt.exe"
           if (-not (Test-Path $shell)) { throw "Qt 壳不存在：$shell —— v6.8.18 的这个 release 资产不能删" }
           # 用 WinRAR 原地更新老包内部文件，保留 WinRAR SFX 壳和 Setup 配置
-          Copy-Item $shell bityuan-windows-amd64-qt.exe
-          & "C:\Program Files\WinRAR\Rar.exe" u bityuan-windows-amd64-qt.exe bityuan.exe bityuan-cli.exe bityuan.toml bityuan-fullnode.toml 2>&1 | Out-String
+          Copy-Item $shell $qt
+          & "C:\Program Files\WinRAR\Rar.exe" u $qt bityuan.exe bityuan-cli.exe bityuan.toml bityuan-fullnode.toml 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "WinRAR update failed" }
           # 删除旧 32 位二进制（只保留 64 位）
-          & "C:\Program Files\WinRAR\Rar.exe" d bityuan-windows-amd64-qt.exe bityuan-x86.exe bityuan-cli-x86.exe 2>&1 | Out-String
+          & "C:\Program Files\WinRAR\Rar.exe" d $qt bityuan-x86.exe bityuan-cli-x86.exe 2>&1 | Out-String
           if ($LASTEXITCODE -ne 0) { throw "WinRAR delete x86 failed" }
-          Compress-Archive -Path bityuan.exe,bityuan-cli.exe,bityuan.toml,bityuan-fullnode.toml -DestinationPath bityuan-windows-amd64.zip
+          # CHANGELOG.md ships in the Linux and macOS archives, so the zip carries it too
+          Compress-Archive -Path bityuan.exe,bityuan-cli.exe,bityuan.toml,bityuan-fullnode.toml,CHANGELOG.md `
+            -DestinationPath "bityuan-windows-amd64-$env:PKG_VERSION.zip"
 
       # 打包是"拿旧 SFX 壳原地替换文件"，这一步校验替换真的生效了
       - name: Verify Qt package
@@ -107,7 +118,8 @@ jobs:
           $ErrorActionPreference = "Stop"
           $7z = "${env:ProgramFiles}\7-Zip\7z.exe"
           if (-not (Test-Path $7z)) { $7z = "7z" }
-          $list = & $7z l bityuan-windows-amd64-qt.exe | Out-String
+          $qt = "bityuan-windows-amd64-qt-$env:PKG_VERSION.exe"
+          $list = & $7z l $qt | Out-String
           # SFX 壳和脚本必须完整保留
           foreach ($pat in @("Setup=bityuan-qt\.exe", "Shortcut=", "Title=")) {
             if ($list -notmatch $pat) { throw "Qt 包的 SFX 脚本丢了：$pat" }
@@ -118,7 +130,7 @@ jobs:
           }
           # 包里的二进制必须与刚构建（且已冒烟测试过）的那两个字节一致
           New-Item -ItemType Directory -Force -Path qt-verify | Out-Null
-          & $7z e bityuan-windows-amd64-qt.exe bityuan.exe bityuan-cli.exe -oqt-verify -y | Out-Null
+          & $7z e $qt bityuan.exe bityuan-cli.exe -oqt-verify -y | Out-Null
           foreach ($f in @("bityuan.exe", "bityuan-cli.exe")) {
             $built = (Get-FileHash $f -Algorithm SHA256).Hash
             $packed = (Get-FileHash "qt-verify\$f" -Algorithm SHA256).Hash
@@ -129,11 +141,11 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: windows-qt-exe
-          path: bityuan-windows-amd64-qt.exe
+          path: bityuan-windows-amd64-qt-${{ env.PKG_VERSION }}.exe
       - uses: actions/upload-artifact@v5
         with:
           name: windows-binaries
-          path: bityuan-windows-amd64.zip
+          path: bityuan-windows-amd64-${{ env.PKG_VERSION }}.zip
       - uses: actions/upload-artifact@v5
         with:
           name: version-windows
@@ -145,6 +157,9 @@ jobs:
       matrix:
         arch: [arm64, amd64]
     runs-on: macos-14
+    needs: check
+    env:
+      PKG_VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -160,7 +175,7 @@ jobs:
           CGO_ENABLED=1 GOOS=darwin GOARCH=${{ matrix.arch }} go build -ldflags "-s -w -X github.com/bityuan/bityuan/version.GitCommit=$GC -X github.com/33cn/chain33/common/version.GitCommit=$GC" -o bityuan-cli ./cli
           chmod +x bityuan bityuan-cli
           mkdir -p build
-          tar -zcvf build/bityuan-darwin-${{ matrix.arch }}.tar.gz bityuan bityuan-cli bityuan.toml bityuan-fullnode.toml CHANGELOG.md
+          tar -zcvf build/bityuan-darwin-${{ matrix.arch }}-$PKG_VERSION.tar.gz bityuan bityuan-cli bityuan.toml bityuan-fullnode.toml CHANGELOG.md
 
       # 三平台共用同一份校验脚本；runner 是 arm64，amd64 产物靠 Rosetta 跑
       - name: Smoke test
@@ -183,7 +198,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: darwin-${{ matrix.arch }}
-          path: build/bityuan-darwin-${{ matrix.arch }}.tar.gz
+          path: build/bityuan-darwin-${{ matrix.arch }}-${{ env.PKG_VERSION }}.tar.gz
       - uses: actions/upload-artifact@v5
         with:
           name: version-darwin-${{ matrix.arch }}
@@ -192,6 +207,9 @@ jobs:
   build-linux:
     name: Build Linux (zig cc)
     runs-on: ubuntu-22.04
+    needs: check
+    env:
+      PKG_VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -204,13 +222,11 @@ jobs:
         uses: ./.github/actions/zig-install
       - name: Build Linux
         run: |
-          # 手动补包时按 tag 里的版本号构建，和 semantic-release 那条路径保持一致
-          TAG="${{ inputs.manual_upload }}"
-          if [ -n "$TAG" ]; then
-            CC='zig cc -target x86_64-linux-gnu.2.17' make linux-action-amd64 VERSION="${TAG#v}"
-          else
-            CC='zig cc -target x86_64-linux-gnu.2.17' make linux-action-amd64
-          fi
+          # Always pin the version. Without it `make` falls back to `git describe`, which
+          # on the automatic path can still resolve to the previous tag, so the package
+          # name would disagree with the version CI reports -- and the binary's `app`
+          # field would differ from the macOS/Windows builds, which read version.go.
+          CC='zig cc -target x86_64-linux-gnu.2.17' make linux-action-amd64 VERSION="${PKG_VERSION}"
 
       # COMPAT.txt 由上面 make 生成（声明支持 glibc >= 2.17）。
       # 这里断言产物真正需要的 glibc 不超过声明值 —— 声明和产物必须对等：
@@ -247,7 +263,7 @@ jobs:
         if: inputs.manual_upload != ''
         with:
           name: linux-tarball
-          path: build/bityuan-linux-amd64.tar.gz
+          path: build/bityuan-linux-amd64-${{ env.PKG_VERSION }}.tar.gz
 
   release-linux:
     name: Release Linux
@@ -343,9 +359,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          FILES="build/bityuan-windows-amd64-qt.exe build/bityuan-windows-amd64.zip build/bityuan-darwin-amd64.tar.gz build/bityuan-darwin-arm64.tar.gz"
-          # 手动补包时 linux 包也一起传（自动流程里它由 semantic-release 上传，这里没有这个文件）
-          [ -f build/bityuan-linux-amd64.tar.gz ] && FILES="$FILES build/bityuan-linux-amd64.tar.gz"
+          VER="${V#v}"
+          FILES="build/bityuan-windows-amd64-qt-$VER.exe build/bityuan-windows-amd64-$VER.zip"
+          FILES="$FILES build/bityuan-darwin-amd64-$VER.tar.gz build/bityuan-darwin-arm64-$VER.tar.gz"
+          # On a manual re-upload the Linux package goes up as well. On the automatic path
+          # semantic-release uploads it itself and this file is absent -- hence the `if`,
+          # not `[ -f ] && ...`, whose non-zero status would abort the step under `set -e`.
+          if [ -f "build/bityuan-linux-amd64-$VER.tar.gz" ]; then
+            FILES="$FILES build/bityuan-linux-amd64-$VER.tar.gz"
+          fi
           echo "Uploading to $V: $FILES"
           gh release upload "$V" --repo bityuan/bityuan $FILES --clobber
       # 产物 sha256 清单（取自 GitHub API 的 digest，无需重新下载几十 MB）
@@ -378,11 +400,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
+          VER="${V#v}"
           HAVE=$(gh api "repos/bityuan/bityuan/releases/tags/$V" --jq '.assets[].name')
           MISSING=""
-          for f in bityuan-linux-amd64.tar.gz bityuan-windows-amd64.zip \
-                   bityuan-windows-amd64-qt.exe bityuan-darwin-amd64.tar.gz \
-                   bityuan-darwin-arm64.tar.gz SHA256SUMS; do
+          for f in "bityuan-linux-amd64-$VER.tar.gz" "bityuan-windows-amd64-$VER.zip" \
+                   "bityuan-windows-amd64-qt-$VER.exe" "bityuan-darwin-amd64-$VER.tar.gz" \
+                   "bityuan-darwin-arm64-$VER.tar.gz" SHA256SUMS; do
             echo "$HAVE" | grep -qx "$f" || MISSING="$MISSING $f"
           done
           if [ -n "$MISSING" ]; then

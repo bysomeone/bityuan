@@ -37,7 +37,7 @@
     # "@semantic-release/github", #Default 4
     [
       "@semantic-release/github",
-      {"assets": ["build/bityuan-linux-amd64.tar.gz"]}
+      {"assets": ["build/bityuan-linux-amd64-*.tar.gz"]}
     ],
     [
       "@semantic-release/git",

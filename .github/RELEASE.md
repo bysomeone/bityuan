@@ -28,6 +28,25 @@
 - **不能只补某一个包**——一次触发就是 5 个一起重传（它们必须是同一次构建的产物）；
 - 输入框里**必须填 tag，不能填 commit 哈希**（上传目标是已存在的 release）。
 
+## Package file names
+
+Every package carries the release version — for v6.9.1:
+
+| Package | File name |
+|---|---|
+| Linux | `bityuan-linux-amd64-6.9.1.tar.gz` |
+| Windows zip | `bityuan-windows-amd64-6.9.1.zip` |
+| Windows Qt installer | `bityuan-windows-amd64-qt-6.9.1.exe` |
+| macOS | `bityuan-darwin-amd64-6.9.1.tar.gz`, `bityuan-darwin-arm64-6.9.1.tar.gz` |
+
+The version comes from `version/version.go` (the `Check release commit` job outputs
+it as `version`), never from `git describe` — on the automatic path the tag does
+not exist yet when the builds start, so `git describe` would name the packages
+after the previous release.
+
+Every archive carries `CHANGELOG.md`, the Windows zip included, so a package that
+has been downloaded and unpacked still says which version it is.
+
 ## 另一个入口：手动跑一次发版（automake）
 
 **入口**：Actions → **manually auto publish release** → Run workflow（输入随便填）。
@@ -71,6 +90,7 @@ still read that way.
 ## 两个不能碰的地方
 
 - **v6.8.18 release 里的 `bityuan-windows-amd64-qt.exe` 不能删、不能改名、不能覆盖**——
-  它是 Qt 安装包的"壳"，打包时会去下载它（76MB）。要换壳得改 `release.yml` 里那一行。
+  它是 Qt 安装包的"壳"，打包时会去下载它（76MB）。这是**唯一保留无版本号**的资产，
+  CI 用它打出来的包是带版本号的。要换壳得改 `release.yml` 里那一行。
 - Qt 包里的钱包 GUI（`bityuan-qt.exe`）还是 2022 年的版本，CI 只替换里面的节点二进制和配置，
   **不验证 GUI**；装完能不能正常用，只能在 Windows 上人工点一遍确认。
