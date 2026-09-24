@@ -391,7 +391,30 @@ jobs:
             echo "Footer already present, skip"
             exit 0
           fi
-          FOOTER="\n\n---\n\n### System Requirements\n\n**Linux** (glibc >= 2.17): Ubuntu 18.04+, Debian 10+, CentOS 7+, RHEL 7+, Rocky 8+, Alma 8+\n\n**Windows**: Windows 10+, Windows Server 2016+"
+          # Upgrade notes are the `Release-Note:` lines of the commits in this release,
+          # written by their authors (see .github/workflows/release-note.yml for the
+          # rules and `.github/RELEASE.md` for the operator view). The machine only
+          # collects them -- it cannot know what a change means for an operator.
+          # The range comes from the compare API because this job checks out one commit.
+          PREV=$(gh api "repos/bityuan/bityuan/releases?per_page=10" --jq '.[].tag_name' 2>/dev/null | grep -vx "$V" | head -1 || true)
+          NOTES=""
+          if [ -n "$PREV" ]; then
+            NOTES=$(gh api "repos/bityuan/bityuan/compare/$PREV...$V" --jq '.commits[].commit.message' 2>/dev/null \
+                    | sed -n 's/^Release-Note:[[:space:]]*//p' | grep -vix none || true)
+          fi
+          UPGRADE=""
+          if [ -n "$NOTES" ]; then
+            UPGRADE="\n\n### Upgrade Notes\n\n"
+            while IFS= read -r note; do
+              if [ -n "$note" ]; then
+                UPGRADE="$UPGRADE* $note\n"
+              fi
+            done <<< "$NOTES"
+          fi
+          # macOS binaries are built on macos-14 and carry minos 14.0 -- check with
+          # `otool -l bityuan | grep -A4 LC_BUILD_VERSION`. Moving to a newer runner
+          # moves this floor.
+          FOOTER="$UPGRADE\n\n---\n\n### System Requirements\n\n**Linux** (glibc >= 2.17): Ubuntu 18.04+, Debian 10+, CentOS 7+, RHEL 7+, Rocky 8+, Alma 8+\n\n**macOS**: 14.0+\n\n**Windows**: Windows 10+, Windows Server 2016+"
           printf "%b" "$BODY$FOOTER" | gh release edit "$V" --repo bityuan/bityuan -F -
       # release 是 semantic-release 发布后才补资产的，中间任何一步失败都会留下
       # 「已经公开但缺包」的半成品 release（v6.9.1 就这样漏了一次）。这里兜底断言。

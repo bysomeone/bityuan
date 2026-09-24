@@ -47,6 +47,48 @@ after the previous release.
 Every archive carries `CHANGELOG.md`, the Windows zip included, so a package that
 has been downloaded and unpacked still says which version it is.
 
+## Upgrade Notes（影响面声明）
+
+发版页面上「运维需要做什么」那一段，来自提交正文里的 `Release-Note:` 行 ——
+**机器收集，作者声明**。收集动作在 `release.yml` 的 `Add footer to release` 步骤：
+取上一个 tag 到本次 tag 之间所有提交的 `Release-Note:`，非 `none` 的汇成
+`### Upgrade Notes`。
+
+写法（规则同时注释在 `.github/workflows/release-note.yml` 头部）：
+
+```
+fix(p2p): raise the peer version floor
+
+<为什么改>
+
+Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted
+for 24 hours, so upgrade every node together.
+Co-authored-by: ...
+```
+
+- 放**提交正文**，不要放标题；一行，英文（它会被发到 release 页面）。
+- 写**运维要做什么/要知道什么**（后果），不是复述 diff。
+- 真的没有运维可见影响 → 写 `Release-Note: none`（显式声明，不是省略）。
+- 只有 `feat:` / `fix:`（以及旧写法 `[[FEAT]]` / `[[FIX]]`）需要写；`chore:` / `docs:`
+  / `ci:` / `test:` / `refactor:` 不上 release 页面，不做要求。
+
+**CI 强制**：`.github/workflows/release-note.yml` 在每个 PR 上检查两件事 ——
+① 所有会触发发版的提交都有 `Release-Note:`；② 若 diff 命中运维可见的文件
+（`bityuan.toml`、`bityuan-fullnode.toml`、`bityuan.go`、`go.mod`），声明不能是 `none`。
+漏了 PR 会被拦住，补写办法是 amend 提交正文或追加一个提交。
+
+**声明与实际改动是否相符，靠 review 兜** —— AI 辅助编程下这条声明最容易写成套话。
+
+## Release page footer
+
+`upload-win-mac` 在资产上传完之后往 release body 追加两段：**Upgrade Notes**（见上一节）
+和 **System Requirements**。
+
+- macOS 那行是 darwin 二进制的 `minos` —— 目前 14.0，来自 `macos-14` runner
+  （`otool -l bityuan | grep -A4 LC_BUILD_VERSION`）。换 runner 会上移这条线，要跟着改。
+- 该步骤对「body 里已经含 System Requirements」的 release 直接跳过，所以手动补包不会
+  重复追加。
+
 ## 另一个入口：手动跑一次发版（automake）
 
 **入口**：Actions → **manually auto publish release** → Run workflow（输入随便填）。
@@ -72,7 +114,8 @@ use. Subjects take the form `type(scope): description`:
 reach the CHANGELOG. Note what follows from that: **the CHANGELOG is the release
 notes, so anything users or operators need to know has to be a `feat:` or a
 `fix:`** — including a dependency bump that carries a real fix. One PR may hold
-several `fix:` commits; each becomes its own bullet.
+several `fix:` commits; each becomes its own bullet. 每个 `feat:` / `fix:` 提交还要带
+一行 `Release-Note:`（见下面「Upgrade Notes」一节），CI 会检查。
 
 Before v6.9.1 this repo used the jshint preset, which recognised only `[[FEAT]]` /
 `[[FIX]]` subjects and silently ignored `fix:` / `feat:`. Older CHANGELOG entries

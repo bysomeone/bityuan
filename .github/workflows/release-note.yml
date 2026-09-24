@@ -1,0 +1,109 @@
+# Release note check -- the rules for writing one are at the bottom of this header.
+#
+# What it enforces, on every pull request into master/next:
+#
+#   1. every commit that will trigger a release (`feat:` / `fix:`, or the legacy
+#      `[[FEAT]]` / `[[FIX]]`) carries a `Release-Note:` line in its body;
+#   2. when the diff touches an operator-visible file, that line cannot be `none`.
+#
+# Why it exists: the release page is where operators find out whether they have to act,
+# and the one thing a machine cannot write for them is the impact of the change. The
+# author is the only one who knows it, and at commit time they are the only one who
+# still has the context. So the note is *declared* by the author and merely *collected*
+# automatically -- see the "Add footer to release" step in release.yml.
+#
+# ---------------------------------------------------------------------------------
+# How to write one
+# ---------------------------------------------------------------------------------
+#
+# Put it in the commit body (not the subject), as a trailer, on one line:
+#
+#   feat(p2p): raise the peer version floor
+#
+#   <why the change is needed>
+#
+#   Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted
+#   for 24 hours, so upgrade every node together.
+#   Co-authored-by: ...
+#
+#   - Write what an operator on the previous release has to DO or KNOW -- a consequence,
+#     not a restatement of the diff. "Sync the new toml before restarting" beats
+#     "verLimit changed".
+#   - English: it is published on the release page.
+#   - `Release-Note: none` when there is genuinely nothing operator-visible. It is an
+#     explicit "I checked", not a way to skip the line -- and it is rejected outright
+#     when the diff touches bityuan.toml, bityuan-fullnode.toml, bityuan.go or go.mod.
+#   - Only feat/fix commits need one. chore/docs/ci/test/refactor never appear on the
+#     release page, so nothing is asked of them.
+#   - Collected per release as the `Release-Note:` lines of every commit between the
+#     previous tag and this one, rendered as the `### Upgrade Notes` section.
+#   - A note is a claim about the code, and claims drift -- review checks that the note
+#     still matches the diff.
+#
+name: release note check
+
+on:
+  pull_request:
+    branches: [master, next]
+
+permissions:
+  contents: read
+
+jobs:
+  release-note:
+    name: release note
+    runs-on: ubuntu-22.04
+    steps:
+      # Reading each commit's body, plus the whole pull-request diff, needs history
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Every release-triggering commit declares its impact
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=""
+          for sha in $(git rev-list "$BASE..$HEAD"); do
+            subject=$(git log -1 --format=%s "$sha")
+            echo "$subject" | grep -qE '^(\[\[(FEAT|FIX)\]\]|(feat|fix)(\([^)]*\))?!?:)' || continue
+            if ! git log -1 --format=%B "$sha" | grep -qE '^Release-Note:'; then
+              missing="$missing ${sha:0:8}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::these commits trigger a release but carry no 'Release-Note:' line:$missing -- add one, or 'Release-Note: none' if there is genuinely nothing operator-visible (see the header of this file)" >&2
+            exit 1
+          fi
+          echo "every release-triggering commit carries a Release-Note"
+
+      # What an operator has to know is the author's to write; this step is only the
+      # mechanical backstop -- touch these files and 'none' is not an acceptable answer.
+      - name: Operator-visible files need a real note, not 'none'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE...$HEAD")
+          touched=""
+          for f in bityuan.toml bityuan-fullnode.toml bityuan.go go.mod; do
+            # Not `grep -qx "$f" && touched=...`: a non-matching grep returns non-zero,
+            # which aborts the step under `set -e` (Actions runs `bash -e`).
+            if echo "$changed" | grep -qx "$f"; then
+              touched="$touched $f"
+            fi
+          done
+          if [ -z "$touched" ]; then
+            echo "no operator-visible file touched"
+            exit 0
+          fi
+          notes=$(git log --format=%B "$BASE..$HEAD" \
+                  | sed -n 's/^Release-Note:[[:space:]]*//p' | grep -vix none || true)
+          if [ -z "$notes" ]; then
+            echo "::error::operator-visible files changed ($touched) but every Release-Note is missing or 'none' -- say what an operator has to do" >&2
+            exit 1
+          fi
+          echo "touched:$touched"
+          echo "declared:"
+          printf '%s\n' "$notes"
