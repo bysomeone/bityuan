@@ -1,24 +1,19 @@
-# Release note check -- the rules for writing one are at the bottom of this header.
+# Release note check.
 #
-# What it enforces, on every pull request into master/next:
+# One rule: **a commit that triggers a release has to declare what it means for an
+# operator**, in its own body, as a `Release-Note:` line. The release page then shows
+# those lines under "Upgrade Notes" -- they are the part of a release page no machine
+# can write, because "this changes X, so do Y" is not derivable from a diff.
 #
-#   1. every commit that will trigger a release (`feat:` / `fix:`, or the legacy
-#      `[[FEAT]]` / `[[FIX]]`) carries a `Release-Note:` line in its body;
-#   2. when the diff touches an operator-visible file, that line cannot be `none`.
-#
-# Why it exists: the release page is where operators find out whether they have to act,
-# and the one thing a machine cannot write for them is the impact of the change. The
-# author is the only one who knows it, and at commit time they are the only one who
-# still has the context. So the note is *declared* by the author and merely *collected*
-# automatically -- see the "Add footer to release" step in release.yml.
+# Which commits trigger a release is *not* decided here: `.github/scripts/release_commit.sh`
+# reads it out of `.releaserc.yml`, the file semantic-release itself reads. Change the
+# preset there and this check follows -- it cannot drift.
 #
 # ---------------------------------------------------------------------------------
 # How to write one
 # ---------------------------------------------------------------------------------
 #
-# Put it in the commit body (not the subject), as a trailer, on one line:
-#
-#   feat(p2p): raise the peer version floor
+#   fix(p2p): raise the peer version floor
 #
 #   <why the change is needed>
 #
@@ -26,19 +21,17 @@
 #   for 24 hours, so upgrade every node together.
 #   Co-authored-by: ...
 #
-#   - Write what an operator on the previous release has to DO or KNOW -- a consequence,
-#     not a restatement of the diff. "Sync the new toml before restarting" beats
-#     "verLimit changed".
-#   - English: it is published on the release page.
+#   - in the commit BODY (not the subject), one line
+#   - say what an operator running the previous release has to DO or KNOW -- the
+#     consequence, not a restatement of the diff
+#   - English: it is published on the release page
 #   - `Release-Note: none` when there is genuinely nothing operator-visible. It is an
-#     explicit "I checked", not a way to skip the line -- and it is rejected outright
-#     when the diff touches bityuan.toml, bityuan-fullnode.toml, bityuan.go or go.mod.
-#   - Only feat/fix commits need one. chore/docs/ci/test/refactor never appear on the
-#     release page, so nothing is asked of them.
-#   - Collected per release as the `Release-Note:` lines of every commit between the
-#     previous tag and this one, rendered as the `### Upgrade Notes` section.
-#   - A note is a claim about the code, and claims drift -- review checks that the note
-#     still matches the diff.
+#     explicit "I checked", not a way to skip the line
+#   - one per commit: a pull request with three fixes carries three notes, one bullet each
+#   - fix a missing one with `git commit --amend` (or a follow-up commit) and push again
+#
+# Whether a note is *true* is not a CI question: the second step below only warns, and
+# review checks that the note matches the diff.
 #
 name: release note check
 
@@ -54,7 +47,7 @@ jobs:
     name: release note
     runs-on: ubuntu-22.04
     steps:
-      # Reading each commit's body, plus the whole pull-request diff, needs history
+      # Commit bodies, plus the whole pull-request diff
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -66,21 +59,47 @@ jobs:
         run: |
           missing=""
           for sha in $(git rev-list "$BASE..$HEAD"); do
-            subject=$(git log -1 --format=%s "$sha")
-            echo "$subject" | grep -qE '^(\[\[(FEAT|FIX)\]\]|(feat|fix)(\([^)]*\))?!?:)' || continue
-            if ! git log -1 --format=%B "$sha" | grep -qE '^Release-Note:'; then
+            msg=$(git log -1 --format=%B "$sha")
+            rc=0
+            printf '%s' "$msg" | ./.github/scripts/release_commit.sh || rc=$?
+            case "$rc" in
+              0) ;;
+              # 1 = this commit does not trigger a release, nothing to declare
+              1) continue ;;
+              # anything else means the classifier itself is out of step with
+              # .releaserc.yml -- fail loudly rather than wave commits through
+              *)
+                echo "::error::release_commit.sh could not classify $sha (exit $rc) -- fix .github/scripts/release_commit.sh" >&2
+                exit 1
+                ;;
+            esac
+            if ! printf '%s' "$msg" | grep -qE '^Release-Note:'; then
               missing="$missing ${sha:0:8}"
             fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::these commits trigger a release but carry no 'Release-Note:' line:$missing -- add one, or 'Release-Note: none' if there is genuinely nothing operator-visible (see the header of this file)" >&2
+            printf '::error::these commits trigger a release but carry no Release-Note: line:%s\n' "$missing" >&2
+            printf '%s\n' \
+              "" \
+              "Add one line to each commit body (not the subject):" \
+              "" \
+              "  Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted for 24 hours, so upgrade every node together." \
+              "" \
+              "  - what an operator on the previous release must DO or KNOW, not a restatement of the diff" \
+              "  - English -- it is published on the release page" \
+              "  - 'Release-Note: none' if there is genuinely nothing operator-visible" \
+              "  - one per commit; three fixes means three notes, one bullet each" \
+              "" \
+              "Then 'git commit --amend' and push again." >&2
             exit 1
           fi
           echo "every release-triggering commit carries a Release-Note"
 
-      # What an operator has to know is the author's to write; this step is only the
-      # mechanical backstop -- touch these files and 'none' is not an acceptable answer.
-      - name: Operator-visible files need a real note, not 'none'
+      # Advisory, never blocking. A path is a hint, not a verdict: bityuan.toml can be
+      # touched without any operator-visible consequence (a comment, a reordering), and
+      # a real impact can sit in a file not listed here. So this only makes sure a human
+      # reads the note before approving.
+      - name: Warning when an operator-visible file changed
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
@@ -98,12 +117,6 @@ jobs:
             echo "no operator-visible file touched"
             exit 0
           fi
-          notes=$(git log --format=%B "$BASE..$HEAD" \
-                  | sed -n 's/^Release-Note:[[:space:]]*//p' | grep -vix none || true)
-          if [ -z "$notes" ]; then
-            echo "::error::operator-visible files changed ($touched) but every Release-Note is missing or 'none' -- say what an operator has to do" >&2
-            exit 1
-          fi
-          echo "touched:$touched"
-          echo "declared:"
-          printf '%s\n' "$notes"
+          echo "::warning::operator-visible files changed:$touched -- make sure the Release-Note covers what an operator has to do"
+          echo "declared / not declared by the commits in this pull request:"
+          git log --format=%B "$BASE..$HEAD" | sed -n 's/^Release-Note:[[:space:]]*//p' || true
