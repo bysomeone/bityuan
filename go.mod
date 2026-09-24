@@ -226,3 +226,5 @@ require (
 	lukechampine.com/blake3 v1.2.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/33cn/chain33 => github.com/bysomeone/chain33 v0.0.0-20260924074120-ce95afe12c81
