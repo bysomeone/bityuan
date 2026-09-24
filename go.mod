@@ -227,4 +227,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/33cn/chain33 => github.com/bysomeone/chain33 v0.0.0-20260924102005-2781ac597601
+replace github.com/33cn/chain33 => github.com/bysomeone/chain33 v0.0.0-20260924120740-ca26c5e00481

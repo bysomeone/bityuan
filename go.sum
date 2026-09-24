@@ -241,6 +241,8 @@ github.com/bysomeone/chain33 v0.0.0-20260924074120-ce95afe12c81 h1:pkAvofdNOh7po
 github.com/bysomeone/chain33 v0.0.0-20260924074120-ce95afe12c81/go.mod h1:6C5lKl8ejjoXtyhetFXz13t+JV4UQvp9H4t9eLOTNXs=
 github.com/bysomeone/chain33 v0.0.0-20260924102005-2781ac597601 h1:OVAQnKABO4+f6bJhFv6J7cTnq37PON3KN1DnGaMaw0g=
 github.com/bysomeone/chain33 v0.0.0-20260924102005-2781ac597601/go.mod h1:6C5lKl8ejjoXtyhetFXz13t+JV4UQvp9H4t9eLOTNXs=
+github.com/bysomeone/chain33 v0.0.0-20260924120740-ca26c5e00481 h1:KSSzABOC1N6BcDYU3fwmmZn0em9ihv8lM2G9Ow8TIDQ=
+github.com/bysomeone/chain33 v0.0.0-20260924120740-ca26c5e00481/go.mod h1:6C5lKl8ejjoXtyhetFXz13t+JV4UQvp9H4t9eLOTNXs=
 github.com/c-bata/go-prompt v0.2.2 h1:uyKRz6Z6DUyj49QVijyM339UJV9yhbr70gESwbNU3e0=
 github.com/c-bata/go-prompt v0.2.2/go.mod h1:VzqtzE2ksDBcdln8G7mk2RX9QyGjH+OVqOCSiVIqS34=
 github.com/cactus/go-statsd-client/statsd v0.0.0-20191106001114-12b4e2b38748/go.mod h1:l/bIBLeOl9eX+wxJAzxS4TveKRtAqlyDpHjhkfO0MEI=
