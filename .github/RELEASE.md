@@ -49,40 +49,52 @@ has been downloaded and unpacked still says which version it is.
 
 ## Upgrade Notes (who writes one, and where)
 
-The "what an operator has to do" block on a release page comes from `Release-Note:`
-lines in commit bodies — **declared by the author, collected by a machine** (see
-"Release page footer" below).
+The "what an operator has to do" block on a release page comes from the **pull requests
+merged in that release** — specifically the text under a `Release note` heading in each
+pull request description. **One note per pull request, not per commit**: a PR carrying
+three `fix:` commits has one note, and the page shows one bullet.
+
+A heading is the convention (rather than the fenced ```release-note block Kubernetes
+uses) because a PR body is often written without the repository's template, and a heading
+needs no convention to be remembered. `.github/pull_request_template.md` carries it:
 
 ```
-fix(p2p): raise the peer version floor
+## Release note
 
-<why the change is needed>
-
-Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted
-for 24 hours, so upgrade every node together.
-Co-authored-by: ...
+Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted for 24 hours,
+so upgrade every node together.
 ```
 
-- in the commit **body**, not the subject; one line, in English (it is published)
+Everything under the heading, up to the next heading, is the note. Naming is loose:
+`Release notes` / `release-note` work too, case-insensitively.
+
 - the consequence for an operator, not a restatement of the diff
-- `Release-Note: none` when there is genuinely nothing operator-visible — an explicit
-  "I checked", not a way to skip the line
-- one per commit: three `fix:` commits mean three lines, three bullets on the page
+- English: it is published on the release page
+- one or two sentences (~300 characters): the page renders it as a single bullet, so a
+  long note reads badly there. Over 300 characters warns; over 600 the check fails and
+  the detail belongs in the pull request body
+- `NONE` under the heading when the release genuinely has nothing an operator has to act
+  on — an explicit "I checked"
+- the template's comment is stripped, so an untouched template counts as "no note" and
+  the check fails
 
-Which commits have to write one is not a documentation convention here:
+**Whether a PR needs one is not a documentation convention**:
 `.github/scripts/release_commit.sh` reads the preset out of `.releaserc.yml` and applies
 that preset's default releaseRules — under angular that is `feat:` / `fix:` / `perf:` /
 `revert:`, plus any commit carrying `BREAKING CHANGE:`; under jshint, `[[FEAT]]` /
-`[[FIX]]`. An unknown preset makes the script exit 2 and fail the check, rather than
-quietly applying stale rules.
+`[[FIX]]`. A PR with no such commit is not asked for a note — and if one is written
+anyway it is still collected, because the collection step is deliberately inclusive: a
+`chore(deps)` bump that carries a real fix is exactly the case where the author knows
+something the classifier cannot. An unknown preset — or a
+`releaseRules` block, which overrides the preset defaults — makes the script exit 2 and
+fail the check rather than quietly applying stale rules.
 
-**Enforced in CI** (`.github/workflows/release-note.yml`, pull requests only): every
-commit that triggers a release must carry a `Release-Note:`; a missing one fails the
-pull request, and the error message prints the rule itself. **A change to an
-operator-visible file only warns** — a path is a hint, not a verdict (`bityuan.toml` can
-be touched for a comment; a real impact can land in a file not on the list), so that step
-just points the reviewer at the note. **Whether a note is true is review's call**: CI can
-ask whether one exists, not whether it matches the diff.
+**Enforced in CI** (`.github/workflows/release-note.yml`, pull requests only): a PR whose
+commits cut a release must declare a note, and the failure message prints the block
+format. **A change to an operator-visible file only warns** — a path is a hint, not a
+verdict (`bityuan.toml` can be touched for a comment; a real impact can land in a file not
+on the list), so that step just points the reviewer at the note. **Whether a note is true
+is review's call**: CI can ask whether one exists, not whether it matches the diff.
 
 ## Release page footer
 
@@ -91,6 +103,12 @@ Added as soon as the release exists, before any asset is uploaded: `release-linu
 **Upgrade Notes** (previous section) and **System Requirements** to the release body. It
 lives there rather than in the upload job because an upload can fail, and a failed upload
 should not leave the page without "what an operator has to do".
+
+The script walks the commits between the previous tag and this one, maps each to its pull
+request, and renders one bullet per PR from the text under that PR's `Release note`
+heading. A commit that
+never went through a pull request (pushed straight to master) falls back to a
+`Release-Note:` line in its own body.
 
 - The macOS line is the `minos` of the darwin binaries — currently 14.0, from building on
   the `macos-14` runner (`otool -l bityuan | grep -A4 LC_BUILD_VERSION`). Moving to a newer
@@ -130,8 +148,8 @@ side `.github/scripts/release_commit.sh` reads `.releaserc.yml` and applies the 
 reach the CHANGELOG. Note what follows from that: **the CHANGELOG is the release
 notes, so anything users or operators need to know has to be a `feat:` or a
 `fix:`** — including a dependency bump that carries a real fix. One PR may hold
-several `fix:` commits; each becomes its own bullet. Each of those commits also carries a
-`Release-Note:` line (see "Upgrade Notes" below); CI checks for it.
+several `fix:` commits; each becomes its own bullet. The pull request itself carries one
+release note (see "Upgrade Notes" below); CI checks for it.
 
 Before v6.9.1 this repo used the jshint preset, which recognised only `[[FEAT]]` /
 `[[FIX]]` subjects and silently ignored `fix:` / `feat:`. Older CHANGELOG entries

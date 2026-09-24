@@ -1,37 +1,38 @@
 # Release note check.
 #
-# One rule: **a commit that triggers a release has to declare what it means for an
-# operator**, in its own body, as a `Release-Note:` line. The release page then shows
-# those lines under "Upgrade Notes" -- they are the part of a release page no machine
-# can write, because "this changes X, so do Y" is not derivable from a diff.
+# One rule: a pull request that will cut a release has to say what that release means
+# for an operator -- **one note for the whole pull request**, under a `Release note`
+# heading in its description, not one per commit. Whether the pull request cuts a release
+# is not decided here: .github/scripts/release_commit.sh reads `.releaserc.yml`, so this
+# check follows exactly the rules semantic-release does.
 #
-# Which commits trigger a release is *not* decided here: `.github/scripts/release_commit.sh`
-# reads it out of `.releaserc.yml`, the file semantic-release itself reads. Change the
-# preset there and this check follows -- it cannot drift.
+# A heading, rather than the fenced ```release-note block Kubernetes uses, because a pull
+# request body is often written without the repository's template and a heading needs no
+# convention to be remembered. Collecting it is automatic: add_release_footer.sh walks the
+# pull requests merged in a release and renders one bullet per note.
 #
 # ---------------------------------------------------------------------------------
 # How to write one
 # ---------------------------------------------------------------------------------
 #
-#   fix(p2p): raise the peer version floor
+# .github/pull_request_template.md carries the section; everything under the heading, up
+# to the next heading, is the note:
 #
-#   <why the change is needed>
+#   ## Release note
 #
-#   Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted
-#   for 24 hours, so upgrade every node together.
-#   Co-authored-by: ...
+#   Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted for 24 hours,
+#   so upgrade every node together.
 #
-#   - in the commit BODY (not the subject), one line
-#   - say what an operator running the previous release has to DO or KNOW -- the
-#     consequence, not a restatement of the diff
+#   - what an operator running the previous release must DO or KNOW -- the consequence,
+#     not a restatement of the diff
+#   - one or two sentences (~300 characters); the release page renders it as one bullet,
+#     and 600 characters is a hard ceiling -- detail belongs in the pull request body
 #   - English: it is published on the release page
-#   - `Release-Note: none` when there is genuinely nothing operator-visible. It is an
-#     explicit "I checked", not a way to skip the line
-#   - one per commit: a pull request with three fixes carries three notes, one bullet each
-#   - fix a missing one with `git commit --amend` (or a follow-up commit) and push again
+#   - NONE under the heading if this release genuinely has nothing an operator has to act on
+#   - replace the template's comment; leaving it in place counts as no note
 #
-# Whether a note is *true* is not a CI question: the second step below only warns, and
-# review checks that the note matches the diff.
+# Whether a note is *true* is not a CI question: the second step only warns, and review
+# checks that the note matches the diff.
 #
 name: release note check
 
@@ -47,53 +48,78 @@ jobs:
     name: release note
     runs-on: ubuntu-22.04
     steps:
-      # Commit bodies, plus the whole pull-request diff
+      # Walking the pull request's commits needs their history
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Every release-triggering commit declares its impact
+      - name: A pull request that cuts a release declares what it means
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          missing=""
+          triggers=""
           for sha in $(git rev-list "$BASE..$HEAD"); do
             msg=$(git log -1 --format=%B "$sha")
             rc=0
             printf '%s' "$msg" | ./.github/scripts/release_commit.sh || rc=$?
             case "$rc" in
-              0) ;;
-              # 1 = this commit does not trigger a release, nothing to declare
-              1) continue ;;
-              # anything else means the classifier itself is out of step with
-              # .releaserc.yml -- fail loudly rather than wave commits through
+              0) triggers="$triggers ${sha:0:8}" ;;
+              # 1 = this commit does not trigger a release
+              1) ;;
+              # anything else means the classifier is out of step with .releaserc.yml:
+              # fail loudly rather than wave the pull request through
               *)
                 echo "::error::release_commit.sh could not classify $sha (exit $rc) -- fix .github/scripts/release_commit.sh" >&2
                 exit 1
                 ;;
             esac
-            if ! printf '%s' "$msg" | grep -qE '^Release-Note:'; then
-              missing="$missing ${sha:0:8}"
-            fi
           done
-          if [ -n "$missing" ]; then
-            printf '::error::these commits trigger a release but carry no Release-Note: line:%s\n' "$missing" >&2
+          if [ -z "$triggers" ]; then
+            echo "no commit in this pull request triggers a release"
+            exit 0
+          fi
+
+          note=$(printf '%s' "$PR_BODY" | ./.github/scripts/extract_release_note.sh)
+          if [ "$(printf '%s' "$note" | tr '[:upper:]' '[:lower:]')" = "none" ]; then
+            echo "release note: NONE -- no operator-visible impact, as declared"
+            exit 0
+          fi
+          if [ -z "$note" ]; then
+            printf '::error::this pull request cuts a release (commits:%s) but declares no release note\n' "$triggers" >&2
             printf '%s\n' \
               "" \
-              "Add one line to each commit body (not the subject):" \
+              "Add a section to the pull request description (.github/pull_request_template.md has it):" \
               "" \
-              "  Release-Note: Nodes older than 6.9.0 are dropped at the p2p layer and blacklisted for 24 hours, so upgrade every node together." \
+              '    ## Release note' \
               "" \
-              "  - what an operator on the previous release must DO or KNOW, not a restatement of the diff" \
-              "  - English -- it is published on the release page" \
-              "  - 'Release-Note: none' if there is genuinely nothing operator-visible" \
-              "  - one per commit; three fixes means three notes, one bullet each" \
+              '    What an operator running the previous release must DO or KNOW.' \
               "" \
-              "Then 'git commit --amend' and push again." >&2
+              "  - everything under the heading, up to the next heading, is the note" \
+              "  - the consequence, not a restatement of the diff" \
+              "  - one or two sentences; the release page renders it as a single bullet" \
+              "  - English -- it is published on the release page under \"Upgrade Notes\"" \
+              "  - NONE under the heading if this release genuinely has nothing an operator has to act on" \
+              "  - replace the template's comment; leaving it in place counts as no note" >&2
             exit 1
           fi
-          echo "every release-triggering commit carries a Release-Note"
+
+          # A note is rendered as one bullet on the release page, so it has to stay a
+          # note. The ceiling is generous on purpose: it is there to catch a pasted
+          # paragraph or a diff, not to make anyone count characters -- detail belongs
+          # in the pull request body.
+          chars=${#note}
+          if [ "$chars" -gt 600 ]; then
+            printf '::error::the release note is %s characters long -- keep it to a sentence or two and put the detail in the pull request body\n' "$chars" >&2
+            exit 1
+          fi
+          if [ "$chars" -gt 300 ]; then
+            echo "::warning::the release note is $chars characters long -- a sentence or two reads better on the release page"
+          fi
+          echo "release note declared ($chars characters):"
+          printf '%s\n' "$note"
+          exit 0
 
       # Advisory, never blocking. A path is a hint, not a verdict: bityuan.toml can be
       # touched without any operator-visible consequence (a comment, a reordering), and
@@ -117,6 +143,4 @@ jobs:
             echo "no operator-visible file touched"
             exit 0
           fi
-          echo "::warning::operator-visible files changed:$touched -- make sure the Release-Note covers what an operator has to do"
-          echo "declared / not declared by the commits in this pull request:"
-          git log --format=%B "$BASE..$HEAD" | sed -n 's/^Release-Note:[[:space:]]*//p' || true
+          echo "::warning::operator-visible files changed:$touched -- check that the release note covers what an operator has to do"
