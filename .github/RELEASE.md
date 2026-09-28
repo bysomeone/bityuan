@@ -155,6 +155,48 @@ Before v6.9.1 this repo used the jshint preset, which recognised only `[[FEAT]]`
 `[[FIX]]` subjects and silently ignored `fix:` / `feat:`. Older CHANGELOG entries
 still read that way.
 
+## Pre-release channel (`next`)
+
+`next` is a long-lived branch used to publish the next version for validation before it
+goes to everyone. **Merging into `next` publishes immediately** — there is no "merge now,
+release later" step.
+
+| Step | Result |
+|---|---|
+| Cut the working branch from the **latest** `master` | The branch carries the current release tag with it |
+| Open a PR against `next`, merge it | Publishes `vX.Y.Z-next.N` (marked Pre-release on GitHub, never Latest) |
+| Validate with that build | |
+| Open a PR for the **same branch** against `master`, merge it | Publishes the final `vX.Y.Z` |
+
+The rules that matter:
+
+- **A pre-release never consumes a version number.** With `v6.9.1` out, `next` publishes
+  `v6.9.2-next.1`, `-next.2`, … and `master` still releases `v6.9.2`.
+- **Always cut the branch from the latest `master`.** Merging such a branch into `next` is
+  what puts the newest release tag on `next`; a branch cut from an older baseline leaves the
+  next pre-release numbered below the version already released (`6.9.2-next.2` < `6.9.2`).
+- **Promote the branch, not the branch's history on `next`.** The final release is the same
+  branch merged into `master`, so `master` never carries a `-next.N` commit or version.
+- **Do not squash-merge into `master`.** Squashing replaces the `[[FIX]]` / `[[FEAT]]`
+  commit titles with the PR title, so semantic-release finds nothing to release and no
+  version is published. Use a merge commit.
+- **Never edit `version/version.go` by hand** — on both branches the version is written by
+  the semantic-release replace plugin, and a manual edit is overwritten by the next release.
+- Release-commit rules are the same as on `master` (`[[FEAT]]` / `[[FIX]]`); a merge that
+  only touches CI or docs publishes nothing.
+- Package file names do not carry the version yet, so identify a build by its release tag,
+  not by the file name.
+- Re-publishing needs a **new commit**: re-running CI on the same commit publishes nothing.
+- `.releaserc.yml` and `release.yml` are read from the branch being released, and a branch
+  cut from `master` carries `master`'s version of them, so merging it into `next` also brings
+  any recent change to the release configuration. Expect a conflict only when such a change
+  touches the same lines as this branch's pre-release settings — resolve by keeping both.
+- GitHub collapses pre-releases under the Latest release, so they never hide it, but delete
+  the ones you have finished with to keep the page and the tag list tidy:
+  `gh release delete vX.Y.Z-next.N --cleanup-tag --yes`. That removes **only that release
+  and its tag**; the version number is recomputed from the tags that remain, so the next
+  round can publish the same `-next.N` again.
+
 ## 出问题了怎么判断
 
 | 现象 | 怎么办 |
