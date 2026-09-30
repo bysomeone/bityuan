@@ -62,4 +62,10 @@ strip_comments() {
   ' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d'
 }
 
-extract_by_heading | strip_comments
+# The attribution the PR tooling appends after the note is not part of what an operator
+# has to do, so it never reaches the release page.
+strip_attribution() {
+  awk 'tolower($0) !~ /generated with \[?claude code\]?/ && $0 !~ /claude\.com\/claude-code/'
+}
+
+extract_by_heading | strip_comments | strip_attribution
