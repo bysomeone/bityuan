@@ -295,6 +295,8 @@ jobs:
     # 任一构建/冒烟失败，本 job 会被跳过（不会出现只发一半的 release）
     needs: [check, build-windows, build-macos, build-linux]
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       # 下面要用仓库里的脚本（.github/scripts/compare_versions.py），必须 checkout
       - uses: actions/checkout@v5
@@ -322,7 +324,7 @@ jobs:
           V="${{ steps.tag.outputs.tag }}"
           SHA=""
           for i in $(seq 1 60); do
-            SHA=$(gh api "repos/bityuan/bityuan/git/ref/tags/$V" --jq .object.sha 2>/dev/null) || SHA=""
+            SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/$V" --jq .object.sha 2>/dev/null) || SHA=""
             if [ -n "$SHA" ]; then
               echo "tag $V -> $SHA (head ${{ github.sha }})"
               break
@@ -341,37 +343,37 @@ jobs:
 
       - name: Upload to release
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
           FILES="build/bityuan-windows-amd64-qt.exe build/bityuan-windows-amd64.zip build/bityuan-darwin-amd64.tar.gz build/bityuan-darwin-arm64.tar.gz"
           # 手动补包时 linux 包也一起传（自动流程里它由 semantic-release 上传，这里没有这个文件）
           [ -f build/bityuan-linux-amd64.tar.gz ] && FILES="$FILES build/bityuan-linux-amd64.tar.gz"
           echo "Uploading to $V: $FILES"
-          gh release upload "$V" --repo bityuan/bityuan $FILES --clobber
+          gh release upload "$V" --repo "${{ github.repository }}" $FILES --clobber
       # 产物 sha256 清单（取自 GitHub API 的 digest，无需重新下载几十 MB）
       - name: Write SHA256SUMS
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          gh api "repos/bityuan/bityuan/releases/tags/$V" \
+          gh api "repos/${{ github.repository }}/releases/tags/$V" \
             --jq '.assets[] | select(.name != "SHA256SUMS") | "\(.digest | sub("sha256:"; ""))  \(.name)"' \
             | sort -k2 > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$V" --repo bityuan/bityuan SHA256SUMS --clobber
+          gh release upload "$V" --repo "${{ github.repository }}" SHA256SUMS --clobber
       - name: Add footer to release
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          BODY=$(gh release view "$V" --repo bityuan/bityuan --json body -q .body)
+          BODY=$(gh release view "$V" --repo "${{ github.repository }}" --json body -q .body)
           if echo "$BODY" | grep -q "System Requirements"; then
             echo "Footer already present, skip"
             exit 0
           fi
           FOOTER="\n\n---\n\n### System Requirements\n\n**Linux** (glibc >= 2.17): Ubuntu 18.04+, Debian 10+, CentOS 7+, RHEL 7+, Rocky 8+, Alma 8+\n\n**Windows**: Windows 10+, Windows Server 2016+"
-          printf "%b" "$BODY$FOOTER" | gh release edit "$V" --repo bityuan/bityuan -F -
+          printf "%b" "$BODY$FOOTER" | gh release edit "$V" --repo "${{ github.repository }}" -F -
       # release 是 semantic-release 发布后才补资产的，中间任何一步失败都会留下
       # 「已经公开但缺包」的半成品 release（v6.9.1 就这样漏了一次）。这里兜底断言。
       - name: Assert release is complete
@@ -379,7 +381,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          HAVE=$(gh api "repos/bityuan/bityuan/releases/tags/$V" --jq '.assets[].name')
+          HAVE=$(gh api "repos/${{ github.repository }}/releases/tags/$V" --jq '.assets[].name')
           MISSING=""
           for f in bityuan-linux-amd64.tar.gz bityuan-windows-amd64.zip \
                    bityuan-windows-amd64-qt.exe bityuan-darwin-amd64.tar.gz \
