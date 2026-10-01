@@ -341,6 +341,27 @@ jobs:
       - name: Compare platform versions
         run: python3 .github/scripts/compare_versions.py "build/version-*.json"
 
+      # The automatic path lets semantic-release create the release; the manual one used to
+      # require a human to create it first, which is why the page's author was whoever ran
+      # `gh release create`. Creating it here instead keeps the whole publish on the workflow
+      # token, so the release is authored by the bot like the assets already are.
+      - name: Create the release if it is missing
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+        run: |
+          V="${{ steps.tag.outputs.tag }}"
+          if gh release view "$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $V already exists"
+            exit 0
+          fi
+          # A tag that is not a plain vX.Y.Z is a pre-release (v6.9.2-next.1, -addrfix, ...).
+          PRE=""
+          if ! printf '%s' "$V" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            PRE="--prerelease"
+          fi
+          gh release create "$V" --repo "${{ github.repository }}" --verify-tag \
+            --title "$V" $PRE \
+            --notes "Published by the release workflow. See the pull request for the change it carries."
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
