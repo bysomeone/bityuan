@@ -237,6 +237,10 @@ github.com/btcsuite/winsvc v1.0.0/go.mod h1:jsenWakMcC0zFBFurPLEAyrnc/teJEM1O46f
 github.com/buger/jsonparser v0.0.0-20181115193947-bf1c66bbce23/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
 github.com/bysomeone/chain33 v0.0.0-20260930133622-691626f0774b h1:vg/vRfZtgb0wc0s0ra3FQialNdTOuWmJfbJ6CGSs2G8=
 github.com/bysomeone/chain33 v0.0.0-20260930133622-691626f0774b/go.mod h1:6C5lKl8ejjoXtyhetFXz13t+JV4UQvp9H4t9eLOTNXs=
+github.com/bysomeone/chain33 v1.72.1-0.20261007094638-eb4f3b8c7053 h1:RFVNWEHtw9e4rKVSEBj11OoFetqNB8EJa50zP6pncMQ=
+github.com/bysomeone/chain33 v1.72.1-0.20261007094638-eb4f3b8c7053/go.mod h1:6C5lKl8ejjoXtyhetFXz13t+JV4UQvp9H4t9eLOTNXs=
+github.com/bysomeone/plugin v0.0.0-20261007091037-93c4c22e53c0 h1:1c73OUorCIRzUjXyJ+OfhumCetwpnT8PIV6SFOokG5M=
+github.com/bysomeone/plugin v0.0.0-20261007091037-93c4c22e53c0/go.mod h1:sPz6iWMfTu8osvQmiZS2sE1NclIG7bpvlnItpA0wxOs=
 github.com/c-bata/go-prompt v0.2.2 h1:uyKRz6Z6DUyj49QVijyM339UJV9yhbr70gESwbNU3e0=
 github.com/c-bata/go-prompt v0.2.2/go.mod h1:VzqtzE2ksDBcdln8G7mk2RX9QyGjH+OVqOCSiVIqS34=
 github.com/cactus/go-statsd-client/statsd v0.0.0-20191106001114-12b4e2b38748/go.mod h1:l/bIBLeOl9eX+wxJAzxS4TveKRtAqlyDpHjhkfO0MEI=
