@@ -229,4 +229,4 @@ require (
 
 replace github.com/33cn/chain33 => github.com/bysomeone/chain33 v1.72.1-0.20261007094638-eb4f3b8c7053
 
-replace github.com/33cn/plugin => github.com/bysomeone/plugin v0.0.0-20261007091037-93c4c22e53c0
+replace github.com/33cn/plugin => github.com/bysomeone/plugin v0.0.0-20261007110951-25d7163e5c0a
