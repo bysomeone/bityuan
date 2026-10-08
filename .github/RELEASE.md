@@ -1,12 +1,63 @@
-# 手动发布 / 补包操作
+# Release flow / manual re-packaging
 
-正常情况下不用看这份文档：合并到 master 后 CI 会自动发版并上传全部 5 个包。
-这里只讲**自动流程出问题时，怎么手动把包装上去**。
+A release happens **only** when a release pull request is merged, and the release page is
+published by **github-actions[bot]**: no personal access token (PAT) is involved anywhere, and
+nothing is ever pushed straight to master.
+
+## Cutting a release: merge the release pull request
+
+1. **Merge a commit that carries a release tag** (`[[FEAT]]` / `[[FIX]]`, next section) into master.
+2. **The bot opens a release pull request on its own**: within a minute, a pull request titled
+   `chore(release): X.Y.Z` appears on the `release/pending` branch. If master moves again before it
+   is merged, that same pull request is updated -- the branch is rebuilt, the title and the body are
+   rewritten -- and a second one is never opened.
+3. **Review it.** The diff *is* the release: it bumps `version/version.go` and `README.md` and adds
+   one section to `CHANGELOG.md`. The body of the pull request is the semantic-release note; the
+   release page, however, is built from that **CHANGELOG section**, so an operator-facing warning
+   ("upgrade every node together", ...) belongs in the CHANGELOG diff, where it is reviewed like any
+   other change.
+4. **Merge it.** Two things to know:
+   - the pull request is opened with `GITHUB_TOKEN`, and GitHub **does not run workflows for events a
+     `GITHUB_TOKEN` caused**, so it carries no CI status checks at all -- a human has to look;
+   - master has required status checks, so the merge goes through the **admin bypass**
+     (`enforce_admins` is off).
+5. **That push releases.** `publish-release` reads the version, takes the matching section of
+   `CHANGELOG.md` as the release body, and creates the tag and the release in a single call, with the
+   tag on the merge commit. Meanwhile `build-windows` / `build-macos` / `build-linux` build and
+   smoke-test the five packages; only when all three pass does `upload-win-mac` upload them, write
+   `SHA256SUMS`, add the System Requirements footer and assert that the asset list is complete.
+
+The version is read from **`version/version.go`**, never from the commit subject, so the release pull
+request may be merged with a merge commit, a squash or a rebase. A version whose tag
+(`refs/tags/vX.Y.Z`) already exists is never released twice.
+
+### Why the release pull request has no CI
+
+GitHub has one hard rule here: **events caused by `GITHUB_TOKEN` do not start workflow runs.** The bot
+creates the branch and the pull request with the built-in token, so no check ever runs on it. That is
+not a missing configuration, and it is deliberately not worked around by reintroducing a PAT: it is
+the cost of "a human looks before merging".
+
+## 什么样的提交才会发版
+
+发版由 semantic-release 判定，它用的是 **jshint 格式**（`.releaserc.yml` 里 `preset: jshint`），
+**只认方括号标签、且必须大写**：
+
+| 提交标题写成 | 结果 |
+|---|---|
+| `[[FEAT]] 描述` | 发 minor（6.8.x → 6.9.0），CHANGELOG 归入 Features |
+| `[[FIX]] 描述` | 发 patch（6.8.21 → 6.8.22），CHANGELOG 归入 Bug Fixes |
+| 正文含 `BREAKING CHANGE:` | 发 major |
+
+**其他写法一律不发版**，也不会进 CHANGELOG：`feat: xxx`、`fix(scope): xxx`、`ci: xxx`、纯中文描述等。
+所以只改 CI / 文档、又想让版本号往前走时，得单独写一个 `[[FIX]] ...` 的提交——
+历史上就是这么做的（见 CHANGELOG 6.8.21 的 "trigger patch release for build and CI fixes"）。
 
 ## 谁可以操作
 
-仓库 **write 权限**（能合并 PR 的人）：仓库 → Actions → 选 workflow → **Run workflow**。
-上传用的是仓库里的 `GH_TOKEN` secret，操作者不需要自己的 token，也不需要本地环境。
+仓库 **write 权限**（能合并 PR 的人）：合并 release PR 就行；下面的手动补包入口在
+仓库 → Actions → 选 workflow → **Run workflow**。上传用的是 workflow 自带的 `GITHUB_TOKEN`，
+操作者不需要自己的 token，也不需要本地环境。
 
 ## 最常用：重新打包并上传（补齐所有平台的包）
 
@@ -28,38 +79,31 @@
 - **不能只补某一个包**——一次触发就是 5 个一起重传（它们必须是同一次构建的产物）；
 - 输入框里**必须填 tag，不能填 commit 哈希**（上传目标是已存在的 release）。
 
-## 另一个入口：手动跑一次发版（automake）
-
-**入口**：Actions → **manually auto publish release** → Run workflow（输入随便填）。
-
-用途：push 没能触发发布流程时，手动跑一遍 semantic-release。它会打 tag、发 release、上传 linux 包。
-
-⚠️ **它不能"强制"发版**：如果自上一个 tag 以来没有 `[[FEAT]]` / `[[FIX]]` 这类发版类型的提交，
-它会判定"无需发布"直接退出，什么都不做。想发版得先有一个发版类型的提交。
-
-## 什么样的提交才会发版
-
-发版由 semantic-release 判定，它用的是 **jshint 格式**（`.releaserc.yml` 里 `preset: jshint`），
-**只认方括号标签、且必须大写**：
-
-| 提交标题写成 | 结果 |
-|---|---|
-| `[[FEAT]] 描述` | 发 minor（6.8.x → 6.9.0），CHANGELOG 归入 Features |
-| `[[FIX]] 描述` | 发 patch（6.8.21 → 6.8.22），CHANGELOG 归入 Bug Fixes |
-| 正文含 `BREAKING CHANGE:` | 发 major |
-
-**其他写法一律不发版**，也不会进 CHANGELOG：`feat: xxx`、`fix(scope): xxx`、`ci: xxx`、纯中文描述等。
-所以只改 CI / 文档、又想让版本号往前走时，得单独写一个 `[[FIX]] ...` 的提交——
-历史上就是这么做的（见 CHANGELOG 6.8.21 的 "trigger patch release for build and CI fixes"）。
-
 ## 出问题了怎么判断
 
 | 现象 | 怎么办 |
 |---|---|
 | 某个平台的包没上传 | 用上面「重新打包」入口，填那个 tag 重跑一遍 |
-| 整个 release 都没出来（tag 都没打） | 看 `release` workflow 里 **Release Linux** 的日志：偶发问题（网络 / runner）就重跑那次失败的 run；代码问题就修好后再推一个带 `[[FIX]]` 或 `[[FEAT]]` 的提交 |
+| 整个 release 都没出来（tag 都没打） | 先看 release PR 有没有出现（`plan-release` 负责算版本、推分支、开 PR）；再看这次 push 的 `publish-release` / `build-*` 哪一步红了。偶发问题（网络 / runner）重跑那次 run；代码问题就修好后再推一个带 `[[FIX]]` 或 `[[FEAT]]` 的提交 |
+| `plan-release` 报 `nothing to commit` | master 上 `version/version.go` 已经等于 dry run 算出的版本（release PR 合了、但 tag 还没打成 / 那次 run 失败了）。看这次 push 的 `publish-release` 为什么没发出去 |
+| `check` 说 tag 已存在，或 `publish-release` 说 release 已存在 | 这是**正常保护**：该版本已经发布过，不会再发第二次。要补包走上面的入口；版本号往前走要等下一个 `[[FIX]]` / `[[FEAT]]` |
 | 手动补包跑完，release 里还是缺东西 | 看那次 run 里哪个 job 红了。**冒烟测试没通过时上传会被拦住**（故意的：宁可不上传，也不发没验证过的包） |
 | 想核对下载到的文件 | release 里有 `SHA256SUMS`，`shasum -a 256 -c SHA256SUMS`（macOS / Linux） |
+
+## 机制速查（维护 release.yml 的人看）
+
+| 文件 / job | 干什么 |
+|---|---|
+| `release.yml` · `check` | 从 `version/version.go` 读版本号；该版本的 tag 已存在 → `is_release=false`，反之 `is_release=true` |
+| `release.yml` · `plan-release` | semantic-release **dry run** 只算下一个版本号和 note（dry run 不写文件、不打 tag），再调 `release_pr.sh` 维护 release PR |
+| `release.yml` · `publish-release` | 合并后从 `CHANGELOG.md` 取该版本的段落当正文，用 `GITHUB_TOKEN` 一次调用打好 tag、建出 release（作者因此是 github-actions[bot]） |
+| `.releaserc.yml` | 只剩 commit-analyzer / release-notes-generator / github（github 只为生成 note 的富文本）；改版本号、写 CHANGELOG、提交、打 tag 现在都在 workflow 里做 |
+| `.github/scripts/release_plan.sh` | 把版本号写进 `version/version.go`、`README.md`、`CHANGELOG.md`（只改工作区，不碰 git） |
+| `.github/scripts/release_pr.sh` | 重建 `release/pending`、提交（作者是 bot）、push（带 `--force-with-lease`）、开或更新 release PR |
+
+`CHANGELOG.md` 的段落由 dry run 的 note 写成，所以新条目的提交链接文字是短 sha
+（`([5f45ca3](...))`），而 6.9.x 那几条是空的 `([](...))`；这是历史格式本来就有过的两种写法，
+不是错误。
 
 ## 两个不能碰的地方
 
@@ -67,3 +111,9 @@
   它是 Qt 安装包的"壳"，打包时会去下载它（76MB）。要换壳得改 `release.yml` 里那一行。
 - Qt 包里的钱包 GUI（`bityuan-qt.exe`）还是 2022 年的版本，CI 只替换里面的节点二进制和配置，
   **不验证 GUI**；装完能不能正常用，只能在 Windows 上人工点一遍确认。
+
+## 仓库里遗留的旧入口（不要用）
+
+`Actions → manually auto publish release`（`.github/workflows/automake.yml`）还是旧流程：用
+**PAT 跑一次完整 semantic-release，直接往 master 推提交和 tag、并发布 release**，既绕过 release PR
+这道人工闸门，release 页作者也会变成 PAT 的持有人。**不要再使用它**，请走上面的 release PR 流程。

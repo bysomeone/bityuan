@@ -15,6 +15,13 @@ on:
         default: ''
         type: string
 
+# The built-in token is what publishes now: with "contents: write" it may push the
+# release branch and create the tag and the release. That is the point of the flow --
+# the release page ends up authored by github-actions[bot] instead of by whoever owns
+# a personal access token, and nothing is ever pushed to master.
+permissions:
+  contents: write
+
 jobs:
   check:
     name: Check release commit
@@ -24,6 +31,10 @@ jobs:
       release_tag: ${{ steps.chk.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Tags are what tells a version still waiting in the release pull request
+          # from one that has already been published.
+          fetch-depth: 0
       - id: chk
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,23 +44,117 @@ jobs:
             echo "release_tag=${{ inputs.manual_upload }}" >> $GITHUB_OUTPUT
             exit 0
           fi
-          # 非 chore(release) commit 直接跳过
-          MSG=$(git log -1 --format=%s)
-          if [[ "$MSG" != chore\(release\):* ]]; then
-            echo "is_release=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # release commit 已把 version/version.go 更新为新版本，tag 名由它推导
-          # 注意：semantic-release 先推 commit 再推 tag，此 job 里 tag 可能还不存在，
-          # 所以这里不查 API，等 tag 的校验放到 upload-win-mac 里做
-          VER=$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([0-9][0-9.]*\)".*/\1/p' version/version.go | head -1)
+          # The version is read from version/version.go, never from the commit
+          # subject: the release pull request may be merged with a merge commit, a
+          # squash or a rebase, and only the file itself always carries the version
+          # that is due.
+          # Take whatever stands between the quotes: a pre-release published from
+          # `next` is 6.9.2-next.1, which a digits-and-dots pattern would truncate to
+          # 6.9.2 and then tag the wrong thing.
+          VER=$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' version/version.go | head -1)
           if [ -z "$VER" ]; then
             echo "无法从 version/version.go 解析版本号" >&2
             echo "is_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+          # A tag that already exists means this version has been published: a version
+          # is never released twice, whatever triggers the workflow.
+          if git rev-parse -q --verify "refs/tags/v$VER" >/dev/null; then
+            echo "v$VER is already tagged, nothing to release"
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           echo "is_release=true" >> $GITHUB_OUTPUT
           echo "release_tag=v$VER" >> $GITHUB_OUTPUT
+
+  plan-release:
+    name: Open or update the release pull request
+    needs: check
+    if: github.event_name == 'push' && needs.check.outputs.is_release == 'false'
+    # One plan at a time: two pushes landing together must not rebuild the release
+    # branch from under each other.
+    concurrency:
+      group: release-pr
+      cancel-in-progress: false
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # semantic-release reads the tags to work out the last release.
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Compute the next version and the release notes (dry run)
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          # A dry run skips every phase that writes (commit, tag, changelog files,
+          # release) and only computes the version and the notes. The tag belongs to
+          # publish-release, behind the merge of this pull request, so a non-dry run
+          # here would tag a branch nobody has merged yet.
+          dry_run: true
+          branch: master
+          extra_plugins: conventional-changelog-jshint@5.2.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Open or update the release pull request
+        if: steps.semantic.outputs.new_release_published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.semantic.outputs.new_release_version }}
+          NOTES: ${{ steps.semantic.outputs.new_release_notes }}
+        run: |
+          # The notes are multi-line and travel through an environment variable so
+          # that they reach the script unharmed.
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/release-notes.md"
+          .github/scripts/release_pr.sh "$VERSION" "${{ github.repository }}" "$RUNNER_TEMP/release-notes.md"
+
+  publish-release:
+    name: Create the tag and the release
+    needs: check
+    if: github.event_name == 'push' && needs.check.outputs.is_release == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Take the release body from CHANGELOG.md
+        env:
+          RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
+        run: |
+          VER="${RELEASE_TAG#v}"
+          # The release pull request wrote this section when it was planned, so the
+          # notes reviewed on it are exactly what goes on the release page. A patch is
+          # headed "## [x.y.z]" and a minor release "# [x.y.z]"; the section runs up to
+          # the next such header.
+          BODY=$(awk -v ver="$VER" '
+            /^#{1,2} \[/ {
+              if (found) exit
+              if ($0 ~ ("^#{1,2} \\[" ver "\\]")) found = 1
+            }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            echo "CHANGELOG.md carries no section for $VER, refusing to publish an empty release" >&2
+            exit 1
+          fi
+          printf '%s\n' "$BODY" > "$RUNNER_TEMP/release-body.md"
+          echo "release body:"
+          cat "$RUNNER_TEMP/release-body.md"
+      - name: Create the tag and the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $RELEASE_TAG already exists, nothing to do"
+            exit 0
+          fi
+          # --target lands the tag on the commit this push carries, which is the merge
+          # commit of the release pull request on master.
+          gh release create "$RELEASE_TAG" --repo "${{ github.repository }}" \
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-body.md" \
+            --target "$GITHUB_SHA"
+          gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json url --jq .url
 
   build-windows:
     name: Build Windows (MinGW)
@@ -241,50 +346,13 @@ jobs:
         with:
           name: version-linux
           path: version-linux.json
-      # 手动补包时要连 linux 包一起补，才把 tarball 也传上来
-      # （自动流程里 linux 包由 semantic-release 自己上传，不需要重复下载 44MB）
+      # The Linux package is uploaded by upload-win-mac on both paths now, manual and
+      # automatic, so the tarball is always kept: semantic-release no longer publishes
+      # any asset itself.
       - uses: actions/upload-artifact@v5
-        if: inputs.manual_upload != ''
         with:
           name: linux-tarball
           path: build/bityuan-linux-amd64.tar.gz
-
-  release-linux:
-    name: Release Linux
-    # release commit 由 semantic-release 自己推送，不能再次触发 semantic-release
-    # （否则会连锁生成重复的 chore(release) commit，并因 tag 已存在而失败）
-    if: |
-      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-      !startsWith(github.event.head_commit.message, 'chore(release):')
-    concurrency:
-      group: semantic-release
-      cancel-in-progress: false
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-      - name: Install zig
-        uses: ./.github/actions/zig-install
-      - name: Semantic Release
-        uses: cycjimmy/semantic-release-action@v4
-        id: semantic
-        with:
-          branch: master
-          extra_plugins: |
-            conventional-changelog-jshint@5.2.0
-            semantic-release-replace-plugin@1.2.7
-            @semantic-release/exec@6
-            @semantic-release/changelog@6
-            @semantic-release/git@10
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
   upload-win-mac:
     name: Upload Windows/macOS packages
@@ -312,8 +380,9 @@ jobs:
           else
             echo "tag=${{ needs.check.outputs.release_tag }}" >> $GITHUB_OUTPUT
           fi
-      # semantic-release 先推 commit、后推 tag（且上传产物耗时数分钟），
-      # 本 job 起跑时 tag/release 可能还没建好，这里等一下（最多 10 分钟）
+      # publish-release creates the tag and the release in parallel with the builds,
+      # and the builds take minutes, so the tag may not be there yet when this job
+      # starts: wait for it (10 minutes at most).
       - name: Wait for release tag
         if: inputs.manual_upload == ''
         env:
@@ -322,7 +391,7 @@ jobs:
           V="${{ steps.tag.outputs.tag }}"
           SHA=""
           for i in $(seq 1 60); do
-            SHA=$(gh api "repos/bityuan/bityuan/git/ref/tags/$V" --jq .object.sha 2>/dev/null) || SHA=""
+            SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/$V" --jq .object.sha 2>/dev/null) || SHA=""
             if [ -n "$SHA" ]; then
               echo "tag $V -> $SHA (head ${{ github.sha }})"
               break
@@ -341,45 +410,45 @@ jobs:
 
       - name: Upload to release
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
           FILES="build/bityuan-windows-amd64-qt.exe build/bityuan-windows-amd64.zip build/bityuan-darwin-amd64.tar.gz build/bityuan-darwin-arm64.tar.gz"
-          # 手动补包时 linux 包也一起传（自动流程里它由 semantic-release 上传，这里没有这个文件）
+          # The Linux package is a build artifact on both paths, manual and automatic
           [ -f build/bityuan-linux-amd64.tar.gz ] && FILES="$FILES build/bityuan-linux-amd64.tar.gz"
           echo "Uploading to $V: $FILES"
-          gh release upload "$V" --repo bityuan/bityuan $FILES --clobber
+          gh release upload "$V" --repo "${{ github.repository }}" $FILES --clobber
       # 产物 sha256 清单（取自 GitHub API 的 digest，无需重新下载几十 MB）
       - name: Write SHA256SUMS
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          gh api "repos/bityuan/bityuan/releases/tags/$V" \
+          gh api "repos/${{ github.repository }}/releases/tags/$V" \
             --jq '.assets[] | select(.name != "SHA256SUMS") | "\(.digest | sub("sha256:"; ""))  \(.name)"' \
             | sort -k2 > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$V" --repo bityuan/bityuan SHA256SUMS --clobber
+          gh release upload "$V" --repo "${{ github.repository }}" SHA256SUMS --clobber
       - name: Add footer to release
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          BODY=$(gh release view "$V" --repo bityuan/bityuan --json body -q .body)
+          BODY=$(gh release view "$V" --repo "${{ github.repository }}" --json body -q .body)
           if echo "$BODY" | grep -q "System Requirements"; then
             echo "Footer already present, skip"
             exit 0
           fi
           FOOTER="\n\n---\n\n### System Requirements\n\n**Linux** (glibc >= 2.17): Ubuntu 18.04+, Debian 10+, CentOS 7+, RHEL 7+, Rocky 8+, Alma 8+\n\n**Windows**: Windows 10+, Windows Server 2016+"
-          printf "%b" "$BODY$FOOTER" | gh release edit "$V" --repo bityuan/bityuan -F -
-      # release 是 semantic-release 发布后才补资产的，中间任何一步失败都会留下
+          printf "%b" "$BODY$FOOTER" | gh release edit "$V" --repo "${{ github.repository }}" -F -
+      # release 是发布后才补资产的，中间任何一步失败都会留下
       # 「已经公开但缺包」的半成品 release（v6.9.1 就这样漏了一次）。这里兜底断言。
       - name: Assert release is complete
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           V="${{ steps.tag.outputs.tag }}"
-          HAVE=$(gh api "repos/bityuan/bityuan/releases/tags/$V" --jq '.assets[].name')
+          HAVE=$(gh api "repos/${{ github.repository }}/releases/tags/$V" --jq '.assets[].name')
           MISSING=""
           for f in bityuan-linux-amd64.tar.gz bityuan-windows-amd64.zip \
                    bityuan-windows-amd64-qt.exe bityuan-darwin-amd64.tar.gz \

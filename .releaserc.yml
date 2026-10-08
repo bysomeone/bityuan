@@ -12,44 +12,17 @@
         "preset": "jshint"
       }
     ],
-    [
-      "semantic-release-replace-plugin",
-      {
-        "replacements": [
-          {
-            "files": ["version/version.go"],
-            "from": 'Version   =.*',
-            "to":   'Version   = "${nextRelease.version}"',
-          },
-          {
-            "files": ["README.md"],
-            "from": "# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（.*）",
-            "to":   "# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（v${nextRelease.version}）"
-          },
-        ]
-      }
-    ],
-    [
-      "@semantic-release/changelog",
-      { "changelogFile": "CHANGELOG.md", "changelogTitle": "changelog" },
-    ],
-    # "@semantic-release/npm", #Default 3
-    # "@semantic-release/github", #Default 4
-    [
-      "@semantic-release/github",
-      {"assets": ["build/bityuan-linux-amd64.tar.gz"]}
-    ],
-    [
-      "@semantic-release/git",
-      {
-        "assets": ["version/version.go","CHANGELOG.md","README.md"],
-        "message": "chore(release): ${nextRelease.version} \n\n${nextRelease.notes}"
-      }
-    ],
-    [
-      "@semantic-release/exec", {
-      "prepareCmd": "CC='zig cc -target x86_64-linux-gnu.2.17' make linux-action-amd64 VERSION=${nextRelease.version}"
-    }
-    ]
+    # Kept on purpose, even though every run of this configuration is a dry run and
+    # the plugin's publish phase therefore never executes: it is this plugin that
+    # implements generateNotes, which is what makes the computed notes carry the
+    # same enriched text the published release used to carry (commit links with the
+    # short sha as link text, "closes #NNN").
+    #
+    # Everything that used to write is gone from here on purpose -- the version and
+    # the CHANGELOG are now written by .github/scripts/release_plan.sh, the commit
+    # and the note by release_pr.sh, and the tag and the release by the workflow.
+    # Leaving those plugins configured would be configuration that silently does
+    # nothing, which is how a rule nobody follows starts.
+    "@semantic-release/github"
   ]
 }
