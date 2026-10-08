@@ -68,13 +68,21 @@ jobs:
           echo "release_tag=v$VER" >> $GITHUB_OUTPUT
 
   plan-release:
-    name: Open or update the release pull request
+    name: Plan the release
     needs: check
-    if: github.event_name == 'push' && needs.check.outputs.is_release == 'false'
-    # One plan at a time: two pushes landing together must not rebuild the release
-    # branch from under each other.
+    # On a push this opens or updates the release pull request. On a pull request it
+    # runs the same dry run plus the fixture checks, so that a release never finds
+    # out at release time that the tooling broke. Nothing that writes runs on a pull
+    # request: the branch push, the tag and the release all sit behind the merge.
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && needs.check.outputs.is_release == 'false')
+    # Serialized per ref. Two pushes landing together must not rebuild the release
+    # branch from under each other, while a pull request has to stay out of that
+    # queue: GitHub cancels the pending run of a group when a newer one arrives, so
+    # a group shared with pull requests would be a real way to lose a release plan.
     concurrency:
-      group: release-pr
+      group: release-plan-${{ github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-22.04
     steps:
@@ -94,12 +102,21 @@ jobs:
           # publish-release, behind the merge of this pull request, so a non-dry run
           # here would tag a branch nobody has merged yet.
           dry_run: true
-          branch: master
+          # semantic-release refuses to run unless the branch it is on is one it is
+          # configured to release from. On a push that is master; on a pull request
+          # it is the branch under test, which is what the dry run then reads the
+          # history from -- a merge commit carrying the pull request.
+          branches: ${{ github.head_ref || github.ref_name }}
           extra_plugins: conventional-changelog-jshint@5.2.0
         env:
           GH_TOKEN: ${{ github.token }}
+      # The fixture checks run on every pull request as well as on a push, and they
+      # are the reason this job is not push-only: they are what the three files the
+      # release rewrites get checked against before a release needs them.
+      - name: Check the release files and the release body round trip
+        run: .github/scripts/check_release_shape.sh
       - name: Open or update the release pull request
-        if: steps.semantic.outputs.new_release_published == 'true'
+        if: github.event_name == 'push' && steps.semantic.outputs.new_release_published == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.semantic.outputs.new_release_version }}
@@ -121,23 +138,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.check.outputs.release_tag }}
         run: |
-          VER="${RELEASE_TAG#v}"
-          # The release pull request wrote this section when it was planned, so the
-          # notes reviewed on it are exactly what goes on the release page. A patch is
-          # headed "## [x.y.z]" and a minor release "# [x.y.z]"; the section runs up to
-          # the next such header.
-          BODY=$(awk -v ver="$VER" '
-            /^#{1,2} \[/ {
-              if (found) exit
-              if ($0 ~ ("^#{1,2} \\[" ver "\\]")) found = 1
-            }
-            found { print }
-          ' CHANGELOG.md)
-          if [ -z "$BODY" ]; then
-            echo "CHANGELOG.md carries no section for $VER, refusing to publish an empty release" >&2
-            exit 1
-          fi
-          printf '%s\n' "$BODY" > "$RUNNER_TEMP/release-body.md"
+          # The release pull request wrote this section when it was planned, so what
+          # was reviewed on it is exactly what goes on the release page. Refusing an
+          # empty body is the point: a release page with nothing on it is worse than
+          # a failed job.
+          .github/scripts/release_body.sh "${RELEASE_TAG#v}" > "$RUNNER_TEMP/release-body.md"
           echo "release body:"
           cat "$RUNNER_TEMP/release-body.md"
       - name: Create the tag and the release
@@ -155,6 +160,23 @@ jobs:
             --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-body.md" \
             --target "$GITHUB_SHA"
           gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json url --jq .url
+
+  lint:
+    name: Lint the release tooling
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      # The workflow and the release scripts are only ever exercised while a release
+      # is being cut, which is the worst moment to discover a typo in them. This job
+      # is that check moved to the pull request. actionlint's own shellcheck
+      # integration is turned off on purpose: the steps this change does not touch
+      # carry SC2086 at info level, and the release scripts are checked directly.
+      - name: Lint the workflow
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -shellcheck=
+      - name: Lint the release scripts
+        run: shellcheck .github/scripts/*.sh
 
   build-windows:
     name: Build Windows (MinGW)

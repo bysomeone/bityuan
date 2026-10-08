@@ -90,16 +90,33 @@ the cost of "a human looks before merging".
 | 手动补包跑完，release 里还是缺东西 | 看那次 run 里哪个 job 红了。**冒烟测试没通过时上传会被拦住**（故意的：宁可不上传，也不发没验证过的包） |
 | 想核对下载到的文件 | release 里有 `SHA256SUMS`，`shasum -a 256 -c SHA256SUMS`（macOS / Linux） |
 
+## What a pull request already checks
+
+Everything in this flow that **writes** -- pushing the branch, opening the pull request, creating the
+tag and the release -- can only happen while a release is being cut. Their decision logic and their
+scripts, however, run on every pull request, so a release is not the first time they run at all:
+
+| On a pull request | What it proves |
+|---|---|
+| `check` | the version/tag decision, the same code the release path uses |
+| `plan-release` | a real semantic-release **dry run**: the plugins and the preset are installed and run, the tags and the history are read, the next version is computed -- and nothing is written. A broken `.releaserc.yml`, an unresolvable preset or a node setup that drifted shows up here |
+| `plan-release` shape check | `release_plan.sh` rewrites the three files for a synthetic version and `release_body.sh` reads the section back; a README title, a `version/version.go` line or a `CHANGELOG.md` header that stopped matching what the scripts expect fails the pull request |
+| `lint` | actionlint on the workflow, shellcheck on the release scripts |
+| `build-*` + smoke tests | the three platforms build and pass their smoke test (already the case before) |
+
 ## 机制速查（维护 release.yml 的人看）
 
 | 文件 / job | 干什么 |
 |---|---|
 | `release.yml` · `check` | 从 `version/version.go` 读版本号；该版本的 tag 已存在 → `is_release=false`，反之 `is_release=true` |
-| `release.yml` · `plan-release` | semantic-release **dry run** 只算下一个版本号和 note（dry run 不写文件、不打 tag），再调 `release_pr.sh` 维护 release PR |
+| `release.yml` · `plan-release` | semantic-release **dry run** 只算下一个版本号和 note（dry run 不写文件、不打 tag）：push 时再调 `release_pr.sh` 维护 release PR，PR 时只跑形状检查 |
 | `release.yml` · `publish-release` | 合并后从 `CHANGELOG.md` 取该版本的段落当正文，用 `GITHUB_TOKEN` 一次调用打好 tag、建出 release（作者因此是 github-actions[bot]） |
+| `release.yml` · `lint` | actionlint 查 workflow、shellcheck 查 `.github/scripts/*.sh`（PR 与 push 都跑） |
 | `.releaserc.yml` | 只剩 commit-analyzer / release-notes-generator / github（github 只为生成 note 的富文本）；改版本号、写 CHANGELOG、提交、打 tag 现在都在 workflow 里做 |
 | `.github/scripts/release_plan.sh` | 把版本号写进 `version/version.go`、`README.md`、`CHANGELOG.md`（只改工作区，不碰 git） |
 | `.github/scripts/release_pr.sh` | 重建 `release/pending`、提交（作者是 bot）、push（带 `--force-with-lease`）、开或更新 release PR |
+| `.github/scripts/release_body.sh` | 从 `CHANGELOG.md` 取某版本的段落：发布时当 release 正文，PR 上被形状检查用来验算 |
+| `.github/scripts/check_release_shape.sh` | 合成版本跑一遍 `release_plan.sh` → `release_body.sh` 的往返，验证三个文件与读取逻辑仍然对得上 |
 
 `CHANGELOG.md` 的段落由 dry run 的 note 写成，所以新条目的提交链接文字是短 sha
 （`([5f45ca3](...))`），而 6.9.x 那几条是空的 `([](...))`；这是历史格式本来就有过的两种写法，
