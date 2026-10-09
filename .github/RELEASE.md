@@ -99,9 +99,9 @@ scripts, however, run on every pull request, so a release is not the first time 
 | On a pull request | What it proves |
 |---|---|
 | `check` | the version/tag decision, the same code the release path uses |
-| `plan-release` | a real semantic-release **dry run**: the plugins and the preset are installed and run, the tags and the history are read, the next version is computed -- and nothing is written. A broken `.releaserc.yml`, an unresolvable preset or a node setup that drifted shows up here |
+| `plan-release` | semantic-release is really started, installs the plugins, loads the configuration and checks that the branch is one it may release from. A broken `.releaserc.yml`, an unresolvable preset or a node setup that drifted shows up here. It does **not** get as far as computing the version on a pull request: semantic-release returns early when it sees a pull request (`isCi && isPr`), so the version and the notes are computed on the push to master instead -- which every merge produces |
 | `plan-release` shape check | `release_plan.sh` rewrites the three files for a synthetic version and `release_body.sh` reads the section back; a README title, a `version/version.go` line or a `CHANGELOG.md` header that stopped matching what the scripts expect fails the pull request |
-| `lint` | actionlint on the workflow, shellcheck on the release scripts |
+| `lint` | actionlint on the workflow, shellcheck on the release scripts, and `test_release_pr.sh`: the branch push and the lease, replayed against a local bare repository with a stub `gh` (the one part of the flow that cannot run on a pull request at all) |
 | `build-*` + smoke tests | the three platforms build and pass their smoke test (already the case before) |
 
 ## 机制速查（维护 release.yml 的人看）
@@ -117,6 +117,7 @@ scripts, however, run on every pull request, so a release is not the first time 
 | `.github/scripts/release_pr.sh` | 重建 `release/pending`、提交（作者是 bot）、push（带 `--force-with-lease`）、开或更新 release PR |
 | `.github/scripts/release_body.sh` | 从 `CHANGELOG.md` 取某版本的段落：发布时当 release 正文，PR 上被形状检查用来验算 |
 | `.github/scripts/check_release_shape.sh` | 合成版本跑一遍 `release_plan.sh` → `release_body.sh` 的往返，验证三个文件与读取逻辑仍然对得上 |
+| `.github/scripts/test_release_pr.sh` | 用本地裸仓库 + stub `gh` 跑 `release_pr.sh` 的 git 半部分：首次建分支、master 前进后强推、lease 拒绝竞态、同版本连跑不叠加 |
 
 `CHANGELOG.md` 的段落由 dry run 的 note 写成，所以新条目的提交链接文字是短 sha
 （`([5f45ca3](...))`），而 6.9.x 那几条是空的 `([](...))`；这是历史格式本来就有过的两种写法，

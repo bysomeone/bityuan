@@ -162,13 +162,13 @@ jobs:
           gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" --json url --jq .url
 
   lint:
-    name: Lint the release tooling
+    name: Lint and test the release tooling
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
       # The workflow and the release scripts are only ever exercised while a release
       # is being cut, which is the worst moment to discover a typo in them. This job
-      # is that check moved to the pull request. actionlint's own shellcheck
+      # is that check moved onto the pull request. actionlint's own shellcheck
       # integration is turned off on purpose: the steps this change does not touch
       # carry SC2086 at info level, and the release scripts are checked directly.
       - name: Lint the workflow
@@ -177,6 +177,13 @@ jobs:
           args: -shellcheck=
       - name: Lint the release scripts
         run: shellcheck .github/scripts/*.sh
+      # The branch push in release_pr.sh cannot run on a pull request, so it is
+      # tested against a local bare repository with a stub `gh` instead: no network,
+      # no GitHub. It covers the first run, a rebuild after master moved, a branch
+      # somebody else moved, the lease refusing a branch that moves between the
+      # fetch and the push, and the same version planned twice.
+      - name: Test the release pull request push
+        run: .github/scripts/test_release_pr.sh
 
   build-windows:
     name: Build Windows (MinGW)
