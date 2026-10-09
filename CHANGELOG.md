@@ -1,5 +1,14 @@
 changelog
 
+## [6.9.3](https://github.com/bysomeone/bityuan/compare/v6.9.2...v6.9.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* bump chain33 to v1.72.5 ([](https://github.com/bysomeone/bityuan/commit/f2c8ec4)), closes [#1406](https://github.com/bysomeone/bityuan/issues/1406)
+* test release ([](https://github.com/bysomeone/bityuan/commit/71722f0))
+* update release action ([](https://github.com/bysomeone/bityuan/commit/8b15477))
+
 ## [6.9.2](https://github.com/bityuan/bityuan/compare/v6.9.1...v6.9.2) (2026-09-30)
 
 
