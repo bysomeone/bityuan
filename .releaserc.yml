@@ -12,17 +12,12 @@
         "preset": "jshint"
       }
     ],
-    # Kept on purpose, even though every run of this configuration is a dry run and
-    # the plugin's publish phase therefore never executes: it is this plugin that
-    # implements generateNotes, which is what makes the computed notes carry the
-    # same enriched text the published release used to carry (commit links with the
-    # short sha as link text, "closes #NNN").
-    #
-    # Everything that used to write is gone from here on purpose -- the version and
-    # the CHANGELOG are now written by .github/scripts/release_plan.sh, the commit
-    # and the note by release_pr.sh, and the tag and the release by the workflow.
-    # Leaving those plugins configured would be configuration that silently does
-    # nothing, which is how a rule nobody follows starts.
-    "@semantic-release/github"
+    # Nothing else belongs here. The plugins that used to write are gone on purpose:
+    # the version and the CHANGELOG are written by .github/scripts/release_plan.sh,
+    # the commit and the note by release_pr.sh, and the tag and the release by the
+    # workflow. `@semantic-release/github` went with them -- it implements
+    # verifyConditions, publish, addChannel, success and fail, and no generateNotes,
+    # so in a dry run it contributed nothing to the notes and only verified a token.
+    # Configuration that silently does nothing is how a rule nobody follows starts.
   ]
 }

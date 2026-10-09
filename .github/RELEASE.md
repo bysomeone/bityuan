@@ -16,6 +16,9 @@ nothing is ever pushed straight to master.
    release page, however, is built from that **CHANGELOG section**, so an operator-facing warning
    ("upgrade every node together", ...) belongs in the CHANGELOG diff, where it is reviewed like any
    other change.
+   **That edit lives on the branch, and the branch is rebuilt from master -- and force-pushed -- on
+   every later merge, so it is dropped if master moves before this pull request is merged.** Review
+   and merge it promptly, or apply the warning again after the next rebuild.
 4. **Merge it.** Two things to know:
    - the pull request is opened with `GITHUB_TOKEN`, and GitHub **does not run workflows for events a
      `GITHUB_TOKEN` caused**, so it carries no CI status checks at all -- a human has to look;
@@ -85,7 +88,7 @@ the cost of "a human looks before merging".
 |---|---|
 | 某个平台的包没上传 | 用上面「重新打包」入口，填那个 tag 重跑一遍 |
 | 整个 release 都没出来（tag 都没打） | 先看 release PR 有没有出现（`plan-release` 负责算版本、推分支、开 PR）；再看这次 push 的 `publish-release` / `build-*` 哪一步红了。偶发问题（网络 / runner）重跑那次 run；代码问题就修好后再推一个带 `[[FIX]]` 或 `[[FEAT]]` 的提交 |
-| `plan-release` 报 `nothing to commit` | master 上 `version/version.go` 已经等于 dry run 算出的版本（release PR 合了、但 tag 还没打成 / 那次 run 失败了）。看这次 push 的 `publish-release` 为什么没发出去 |
+| tag 存在、但 release 页面不存在 | 这是唯一必须人动手的状态：`is_release` 只看 tag，所以 CI 不会再为它建 release（每次后续 push 都会跳过发布）。要么手工建（`gh release create vX.Y.Z --target <该提交>`），要么删掉那个 tag 让下一次 push 重新发。删 release 页面（GitHub 保留 tag）、或手工打了 tag，都会落到这里 |
 | `check` 说 tag 已存在，或 `publish-release` 说 release 已存在 | 这是**正常保护**：该版本已经发布过，不会再发第二次。要补包走上面的入口；版本号往前走要等下一个 `[[FIX]]` / `[[FEAT]]` |
 | 手动补包跑完，release 里还是缺东西 | 看那次 run 里哪个 job 红了。**冒烟测试没通过时上传会被拦住**（故意的：宁可不上传，也不发没验证过的包） |
 | 想核对下载到的文件 | release 里有 `SHA256SUMS`，`shasum -a 256 -c SHA256SUMS`（macOS / Linux） |
@@ -112,7 +115,7 @@ scripts, however, run on every pull request, so a release is not the first time 
 | `release.yml` · `plan-release` | semantic-release **dry run** 只算下一个版本号和 note（dry run 不写文件、不打 tag）：push 时再调 `release_pr.sh` 维护 release PR，PR 时只跑形状检查 |
 | `release.yml` · `publish-release` | 合并后从 `CHANGELOG.md` 取该版本的段落当正文，用 `GITHUB_TOKEN` 一次调用打好 tag、建出 release（作者因此是 github-actions[bot]） |
 | `release.yml` · `lint` | actionlint 查 workflow、shellcheck 查 `.github/scripts/*.sh`（PR 与 push 都跑） |
-| `.releaserc.yml` | 只剩 commit-analyzer / release-notes-generator / github（github 只为生成 note 的富文本）；改版本号、写 CHANGELOG、提交、打 tag 现在都在 workflow 里做 |
+| `.releaserc.yml` | 只剩 commit-analyzer / release-notes-generator（负责算版本号与生成 note）；改版本号、写 CHANGELOG、提交、打 tag、发 release 现在都在 workflow 与脚本里做 |
 | `.github/scripts/release_plan.sh` | 把版本号写进 `version/version.go`、`README.md`、`CHANGELOG.md`（只改工作区，不碰 git） |
 | `.github/scripts/release_pr.sh` | 重建 `release/pending`、提交（作者是 bot）、push（带 `--force-with-lease`）、开或更新 release PR |
 | `.github/scripts/release_body.sh` | 从 `CHANGELOG.md` 取某版本的段落：发布时当 release 正文，PR 上被形状检查用来验算 |

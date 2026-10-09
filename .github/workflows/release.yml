@@ -19,8 +19,14 @@ on:
 # release branch and create the tag and the release. That is the point of the flow --
 # the release page ends up authored by github-actions[bot] instead of by whoever owns
 # a personal access token, and nothing is ever pushed to master.
+#
+# "pull-requests: write" has to be spelled out as well: listing any scope sets every
+# scope that is not listed to "none", so `gh pr create` and `gh pr edit` in
+# release_pr.sh would fail with 403 without it -- and since that step only runs on a
+# push, no pull request check would ever have caught it.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   check:
@@ -131,6 +137,16 @@ jobs:
     name: Create the tag and the release
     needs: check
     if: github.event_name == 'push' && needs.check.outputs.is_release == 'true'
+    # Serialized, because `is_release` stays true until the tag exists: a second push
+    # landing in the minutes this job takes would otherwise run it again and could
+    # create the tag on *its* commit. The tag would then sit above the release commit
+    # and above whatever that second push carried, and semantic-release would never
+    # count those commits again -- they would reach no CHANGELOG and no release page.
+    # With the group, the first push creates the tag and the second finds the release
+    # and stops.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -385,9 +401,13 @@ jobs:
 
   upload-win-mac:
     name: Upload Windows/macOS packages
+    # The second clause is limited to a push on purpose: a dispatch with an empty
+    # manual_upload on a tree whose version is not tagged yet would otherwise run
+    # this job and wait ten minutes for a tag that only publish-release can create,
+    # and publish-release does not run on a dispatch.
     if: |
       (github.event_name == 'workflow_dispatch' && inputs.manual_upload != '') ||
-      (github.event_name != 'pull_request' && needs.check.outputs.is_release == 'true')
+      (github.event_name == 'push' && needs.check.outputs.is_release == 'true')
     # build-linux 放进来是为了「三平台冒烟测试都通过才上传」：
     # 任一构建/冒烟失败，本 job 会被跳过（不会出现只发一半的 release）
     needs: [check, build-windows, build-macos, build-linux]
