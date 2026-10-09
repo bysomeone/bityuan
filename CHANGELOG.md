@@ -1,5 +1,12 @@
 changelog
 
+## [6.9.4](https://github.com/bysomeone/bityuan/compare/v6.9.3...v6.9.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* rehearsal: trigger a second release plan ([](https://github.com/bysomeone/bityuan/commit/d6af61e))
+
 ## [6.9.3](https://github.com/bysomeone/bityuan/compare/v6.9.2...v6.9.3) (2026-10-09)
 
 
