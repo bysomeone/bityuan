@@ -1,4 +1,5 @@
 # This is a basic workflow that is manually triggered
+# 手动跑一遍 semantic-release（只发 linux 包），发布流程与失败处理见 .github/RELEASE.md
 name: manually auto publish release
 
 # Controls when the action will run. Workflow runs when manually triggered using the UI
@@ -19,26 +20,29 @@ on:
 jobs:
   automake:
     name: automake
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false # <--- this
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
 
+      - name: Install zig
+        uses: ./.github/actions/zig-install
+
       - name: Semantic Release
-        uses: cycjimmy/semantic-release-action@v2
+        uses: cycjimmy/semantic-release-action@v4
         id: semantic
         with:
           branch: master
           extra_plugins: |
-            conventional-changelog/conventional-changelog-jshint
-            @google/semantic-release-replace-plugin
-            @semantic-release/exec
-            @semantic-release/changelog
-            @semantic-release/git
+            conventional-changelog-jshint@5.2.0
+            semantic-release-replace-plugin@1.2.7
+            @semantic-release/exec@6
+            @semantic-release/changelog@6
+            @semantic-release/git@10
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 

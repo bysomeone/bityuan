@@ -3,7 +3,7 @@
 [![Windows Build Status](https://ci.appveyor.com/api/projects/status/github/bityuan/bityuan?svg=true&branch=master&passingText=Windows%20-%20OK&failingText=Windows%20-%20failed&pendingText=Windows%20-%20pending)](https://ci.appveyor.com/project/bityuan/bityuan)
 [![Macos Build Status](https://github.com/bityuan/bityuan/actions/workflows/MacOS.yml/badge.svg)](https://github.com/bityuan/bityuan/actions/workflows/MacOS.yml)
 
-# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（v1.0.0）
+# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（v6.9.2）
 
 官方网站: https://www.bityuan.com
 
@@ -29,7 +29,7 @@ L3 20000
 
 ## 安装
 
-#### golang 1.17+
+#### golang 1.19+
 
 
 #### 支持make file的平台
@@ -55,6 +55,28 @@ make
 ```
 make update
 ```
+
+## Database cache (dbCache)
+
+`dbCache` is a config value consumed by `chain33/common/db/go_level_db.go` -- one integer that sets three leveldb parameters at once.
+
+```
+open file handles = dbCache
+block cache       = dbCache/2 MiB
+write buffer      = min(dbCache/4, 16) MiB   (two are held in memory; cap from 33cn/chain33#1398)
+```
+
+Four databases each carry their own, all editable in `bityuan.toml` / `bityuan-fullnode.toml`:
+
+| database | setting | default | can be raised to |
+|---|---|---|---|
+| chain `blockchain.db` (~380k SST files) | `[blockchain] dbCache` | 64 | 256 - 1024 |
+| state `mavltree` | `[store] dbCache` | 128 | 128 - 512 |
+| addrbook / wallet (a few MB) | `[p2p] dbCache` / `[wallet] dbCache` | 4 / 16 | leave at default |
+
+Only the chain database is worth raising. goleveldb must hold a handle on every table it touches, and with hundreds of thousands of SST files against 64 slots the read path is effectively uncached -- while every state read (transaction execution, block production) goes through it.
+
+**The default stays 64.** Raising it has not been measured to help: chain33 exposes no read-latency metric, and a node at the chain tip sees too little read pressure to show one. The only workload that would produce that evidence is a full genesis sync. Memory cost if raised: ~+0.25 GiB at 256, ~+0.5 GiB at 512, ~+1 GiB at 1024. Note that `0` falls back to the default rather than disabling the cache, and that a restart is required.
 
 
 

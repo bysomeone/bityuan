@@ -13,36 +13,18 @@
       }
     ],
     [
-      "@google/semantic-release-replace-plugin",
+      "semantic-release-replace-plugin",
       {
         "replacements": [
           {
             "files": ["version/version.go"],
             "from": 'Version   =.*',
             "to":   'Version   = "${nextRelease.version}"',
-            "results": [
-              {
-                "file": "version/version.go",
-                "hasChanged": true,
-                "numMatches": 1,
-                "numReplacements": 1
-              }
-            ],
-            "countMatches": true
           },
           {
             "files": ["README.md"],
             "from": "# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（.*）",
-            "to":   "# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（v${nextRelease.version}）",
-            "results": [
-              {
-                "file": "README.md",
-                "hasChanged": true,
-                "numMatches": 1,
-                "numReplacements": 1
-              }
-            ],
-            "countMatches": true
+            "to":   "# 基于 chain33 区块链开发 框架 开发的 bityuan 系统（v${nextRelease.version}）"
           },
         ]
       }
@@ -55,17 +37,18 @@
     # "@semantic-release/github", #Default 4
     [
       "@semantic-release/github",
-      {"assets": ["build/*.tar.gz","build/*.zip"]}
+      {"assets": ["build/bityuan-linux-amd64.tar.gz"]}
     ],
     [
       "@semantic-release/git",
       {
         "assets": ["version/version.go","CHANGELOG.md","README.md"],
+        "message": "chore(release): ${nextRelease.version} \n\n${nextRelease.notes}"
       }
     ],
     [
       "@semantic-release/exec", {
-      "prepareCmd": "make linux-action-amd64 VERSION=${nextRelease.version}"
+      "prepareCmd": "CC='zig cc -target x86_64-linux-gnu.2.17' make linux-action-amd64 VERSION=${nextRelease.version}"
     }
     ]
   ]
