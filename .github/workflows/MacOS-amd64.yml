@@ -1,13 +1,13 @@
 name: build darwin-amd64
-on: [push,pull_request]
+on: workflow_dispatch
 
 jobs:
   build_macos:
     name: build_macos
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
         id: go
@@ -18,7 +18,7 @@ jobs:
         run: make darwin-amd64
 
       - name : Upload artifact bin
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5
         with:
           name: bityuan-darwin-amd64.tar.gz
           path: |

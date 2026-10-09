@@ -3,16 +3,16 @@ name: build linux-amd64
 
 # Controls when the action will run. Workflow runs when manually triggered using the UI
 # or API.
-on: [push,pull_request]
+on: workflow_dispatch
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   build_linux:
     name: build_linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
 
@@ -20,7 +20,7 @@ jobs:
         run: make linux-amd64
 
       - name : Upload artifact bin
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v5
         with:
           name: bityuan-linux-amd64.tar.gz
           path: |

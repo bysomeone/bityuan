@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	Version   = "1.0.0"
+	Version   = "6.9.2"
 	GitCommit string
 	BuildTime string
 	// GoVersion system go version
@@ -15,7 +15,7 @@ var (
 	Platform = fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 )
 
-//GetVersion 获取版本信息
+// GetVersion 获取版本信息
 func GetVersion() string {
 	if GitCommit != "" {
 		return Version + "-" + GitCommit

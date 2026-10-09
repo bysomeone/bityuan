@@ -25,6 +25,30 @@ defaultDriver="btc"
 eth=19900000
 btcMultiSign=2270000
 
+#账户黑名单按高度分版本，每个 [mver.blacklist.<分叉名>] 段是一份【全量】名单而非增量，
+#高度 h 生效的是「高度不大于 h 的最大分叉」那一份。已被链跨过的段不可再改，只能追加新分叉。
+#基线段不受分叉门控，自创世生效，现网必须留空
+[mver.blacklist]
+accountBlacklist=[]
+
+#ForkAccountBlacklist=46561600 起生效，内容与迁移前的静态 [blacklist] 段逐地址一致，禁止改动
+[mver.blacklist.ForkAccountBlacklist]
+accountBlacklist=[
+    "0x36086e9f01a934f36910b45aaabfc1256ee8cb66",
+    "0x2bacf52028b388f004d54958eb1cad8e3fcac263",
+    "0xa1d1e29cd8de11821a31467524282f13deda2976",
+    "0xf1641331e82a1b3e27b81edbdbf7c0750f7ae366",
+    "0xd57d5cf08e6b82191beeb48dff3215b0492b3892",
+    "0xd51d08093b8a2df658ca22f3b9145ff63fbeb62c",
+    "0xba7ebf059a332468b0fe98992ff14fabed199072",
+    "0x125cae868427ec5d791304ca165b040e84506737",
+]
+
+#ForkAccountBlacklistV2=47467200 起生效：全量名单为空，即把 V1 拦截的 8 个地址全部放行。
+#V1 区间 [46561600, 47467200) 的判定不受影响，历史区块回放结果不变
+[mver.blacklist.ForkAccountBlacklistV2]
+accountBlacklist=[]
+
 [blockchain]
 defCacheSize=128
 maxFetchBlockNum=128
@@ -48,15 +72,9 @@ serverStart=true
 
 [p2p.sub.dht]
 #bootstraps是内置不能修改的引导节点
-bootstraps=["/ip4/16.163.129.85/tcp/13803/p2p/16Uiu2HAmRekZPVDEAPnsfaiJfUvpzuwQsNhCPyjrBejMsCHj1b1J",
-"/ip4/13.113.195.69/tcp/13803/p2p/16Uiu2HAmKGwEkd42qbWM8gScH8Cj4Vr5HCnbYfnGCimb4bSvKSpT",
-"/ip4/13.115.235.168/tcp/13803/p2p/16Uiu2HAkzNiDx1mN6muuBRgPpDRaUG5NGs8HMHmp1HND968Y6Kho",
-"/ip4/159.138.239.140/tcp/13803/p2p/16Uiu2HAmC9ko1WopBc34fAVho63zKyvmB7pYAW9Zgo5mqBxM3nz7",
-"/ip4/159.138.232.1/tcp/13803/p2p/16Uiu2HAmUetTkT9vY3CZiWyrHstGSSiYEVWJx8zMQhtExj92RXs7",
-"/ip4/159.138.234.29/tcp/13803/p2p/16Uiu2HAm277GGzseNKGTL76LeynECmcK4hkqQLNdSZBcuU2Y91so",
-"/ip4/119.8.172.234/tcp/13803/p2p/16Uiu2HAkwGXhmMgdufdePJKaqsahhVPjaMUbR1SLNdssRM55okUr",
-"/ip4/114.119.188.250/tcp/13803/p2p/16Uiu2HAmL4SmXfMTLq7YUqAgDgDoYkJFquQRnFq6CrDAanRe7zW4"]
-
+bootstraps=["/ip4/13.115.235.168/tcp/13803/p2p/16Uiu2HAkz1pQpLAtuyTx1oYzki9tcSW5ACDR4M4TzriEm2tmZbR2",
+"/ip4/3.37.26.153/tcp/13803/p2p/16Uiu2HAmAkjLnyN8qgb35fY7ryWBWGXPRzsxLoY7NmBTYa2cL8aq",
+"/ip4/174.139.188.98/tcp/13803/p2p/16Uiu2HAm7nyy2yYhHW5VkhbXpTo8vqoZNsgzEH8hMNn98UWWfaK6"]
 
 [p2p.sub.dht.broadcast]
 # 区块哈希广播最小大小 100KB
@@ -73,6 +91,10 @@ poolCacheSize=102400
 minTxFeeRate=100000
 maxTxFee=1000000000
 isLevelFee=true
+
+[mver.mempool.ForkMaxTxFeeV1]
+# 单笔交易最大的手续费,  50 coins
+maxTxFee=5000000000
 
 [mempool.sub.score]
 poolCacheSize=102400
@@ -184,7 +206,7 @@ driver="leveldb"
 signType="secp256k1"
 
 [exec]
-
+proxyExecAddress="0x0000000000000000000000000000000000200005"
 [exec.sub.coins]
 #允许evm执行器操作coins
 friendExecer=["evm"]
@@ -304,6 +326,7 @@ ethMapFromSymbol="bty"
 #当前最大为200万
 evmGasLimit=2000000
 
+
 #系统中所有的fork,默认用chain33的测试网络的
 #但是我们可以替换
 [fork.system]
@@ -333,6 +356,15 @@ ForkTicketFundAddrV1=4320000
 ForkRootHash=7200000 
 #eth address key format fork
 ForkFormatAddressKey=21000000
+ForkCheckEthTxSort=26670000
+ForkProxyExec=29528000
+ForkMaxTxFeeV1=30839600
+ForkEthAddressFormat=32350000
+ForkAccountBlacklist=46561600
+ForkAccountBlacklistV2=47467200
+#chain33 v1.72.0 新增，交易 chainID 严格校验，与 ForkAccountBlacklistV2 同高度一起生效
+ForkTxChainIDStrict=47467200
+ForkParaFee=-1
 
 [fork.sub.evm]
 Enable=19900000
@@ -342,7 +374,15 @@ ForkEVMState=19900000
 ForkEVMFrozen=19900000
 ForkEVMTxGroup=19900000
 ForkEVMKVHash=19900000
-ForkEVMMixAddress=25000000
+ForkEVMMixAddress=25200000
+ForkIntrinsicGas=25200000
+ForkEVMAddressInit=25770000
+ForkEvmExecNonce=26670000
+ForkEvmExecNonceV2=29528000
+ForkEVMFixOverflow=46561600
+
+[fork.sub.rollup]
+Enable=25770000
 
 
 [fork.sub.none]
@@ -378,7 +418,7 @@ ForkBadTokenSymbol= 0
 ForkTokenPrice= 300000
 ForkTokenSymbolWithNumber=1600000
 ForkTokenCheck= 2270000
-
+ForkTokenEvm=-1
 [fork.sub.trade]
 Enable=0
 ForkTradeBuyLimit= 0
@@ -401,7 +441,7 @@ ForkParaAutonomySuperGroup=19030000
 ForkParaFullMinerHeight=-1
 ForkParaRootHash=-1
 ForkParaFreeRegister=21000000
-ForkParaCheckTx=25000000
+ForkParaCheckTx=25200000
 
 [fork.sub.multisig]
 Enable=1600000
